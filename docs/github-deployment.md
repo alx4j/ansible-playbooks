@@ -1,67 +1,57 @@
 # Manual deployment from GitHub Actions
 
-The **Deploy Ansible manually** workflow uses a GitHub-hosted Ubuntu runner as the Ansible controller. It runs only through `workflow_dispatch`; pushing, opening a PR, and merging do not deploy. The existing validation workflow remains automatic.
+The **Deploy Ansible manually** workflow runs only through `workflow_dispatch`. Merge it into the default branch before using **Run workflow**. Pushes, pull requests, and merges do not deploy.
 
-Merge the workflow into the default branch before using **Actions → Deploy Ansible manually → Run workflow**. Select the default branch, a GitHub environment, one inventory host, a playbook, and either `check` (the default) or `apply`. Other branches are skipped by the deployment job.
+## 1. Configure the environment
 
-## Configure a deployment environment
+Create an environment such as `development` in **Settings → Environments**. Restrict deployment branches to the default branch; the deployment job also skips other branches. Environment features depend on repository visibility and GitHub plan.
 
-Create an environment such as `development` in **Settings → Environments**. Restrict its deployment branches to the repository's default branch so feature branches cannot access its credentials. Environment feature availability depends on repository visibility and GitHub plan.
+Copy [the inventory template](../inventories/example/hosts.yml), replace the address, and supply approved public keys as described in [configuration](configuration.md#inventory-and-shared-defaults). Store that YAML as `ANSIBLE_INVENTORY`. The same file works for local runs; shared settings and tool versions come from the role defaults.
 
-Set these environment variables and secrets through GitHub's settings or your established secret-manager synchronization. No credentials are included in this repository or supplied through workflow inputs.
-
-| Name | GitHub setting | Purpose |
+| Name | GitHub setting | Value |
 | --- | --- | --- |
-| `ANSIBLE_INVENTORY` | Variable | Complete YAML inventory, including nonsecret role settings and approved public keys. |
-| `ANSIBLE_KNOWN_HOSTS` | Variable | Verified OpenSSH `known_hosts` entries for the managed hosts. |
-| `ANSIBLE_SSH_PRIVATE_KEY` | Secret | Dedicated SSH automation key authorized on the selected host. Must be usable without an interactive passphrase. |
-| `ANSIBLE_BECOME_PASSWORD` | Optional secret | Sudo password for password-based escalation. Omit for working passwordless sudo. |
-| `DEV_PASSWORD_HASH` | Optional secret | Account-creation hash for bootstrap; omitted from routine deployment subprocesses. |
+| `ANSIBLE_INVENTORY` | Variable | Inventory YAML with connection details, public keys, and any host-specific overrides. |
+| `ANSIBLE_KNOWN_HOSTS` | Variable | Independently verified OpenSSH `known_hosts` entries. |
+| `ANSIBLE_SSH_PRIVATE_KEY` | Secret | Dedicated automation key authorized for the connection account; usable without an interactive passphrase. |
+| `ANSIBLE_BECOME_PASSWORD` | Optional secret | Sudo password for routine runs; omit for working passwordless sudo. |
+| `DEV_PASSWORD_HASH` | Optional secret | Account-creation hash for bootstrap; see [sudo authentication](configuration.md#sudo-authentication). |
 
-Example `ANSIBLE_INVENTORY` (replace the documentation address and key):
+Keep passwords, hashes, and tokens out of the inventory and workflow inputs. For Doppler-managed values, use your established secure synchronization into GitHub environment secrets.
 
-```yaml
-all:
-  children:
-    development:
-      hosts:
-        dev01:
-          ansible_host: 192.0.2.10
-          ansible_user: dev
-      vars:
-        dev_host_authorized_keys:
-          - "ssh-ed25519 REPLACE_WITH_YOUR_PUBLIC_KEY workstation"
-        dev_host_passwordless_sudo: false
-```
+Obtain the server's SSH host key through a trusted channel such as the provider console. For a nondefault SSH port, use `[hostname]:port` in `known_hosts` and set both `ansible_port` and `dev_host_ssh_port`. An unverified `ssh-keyscan` result does not establish trust.
 
-Keep passwords, hashes, and tokens out of inventory variables. Use the environment secrets above. Existing Doppler-managed values can remain authoritative and be synchronized into these deployment secrets through your established secure process; this workflow does not enroll Doppler or copy credentials from a developer machine.
+The runner must be able to reach the VPS's SSH port. GitHub-hosted runners do not have a single fixed IP; network access must already be configured. Standard GitHub Actions usage and billing apply.
 
-Obtain the server's SSH host key through an independently trusted channel, such as the provider console. For a nondefault SSH port, use `[hostname]:port` in `known_hosts` and set `ansible_port` and `dev_host_ssh_port` consistently in the inventory. The workflow never trusts an unverified `ssh-keyscan` result or disables host-key checking.
+## 2. Establish access
 
-The runner needs network access to the VPS's SSH port. This workflow does not add firewall rules, provision a private-network connection, or install a self-hosted runner to establish that initial access. Use your existing network access design; GitHub-hosted runner addresses are not a fixed single IP.
+Choose credentials for the account used by the selected playbook:
 
-## Choose a playbook
+| Playbook | SSH account and credentials |
+| --- | --- |
+| `bootstrap` | Root. The environment's SSH key must already be authorized for root. Supply `DEV_PASSWORD_HASH` for a new account, or explicitly choose passwordless sudo. |
+| `site` / `maintenance` | The inventory account, normally `dev`. Its key and sudo authentication must already work. |
 
-- **`bootstrap`** connects as root, so the supplied key must already be authorized for root. It creates the development account and approved keys, with a supplied password hash or an explicit passwordless-sudo choice. It does not restrict SSH. Initial password-only root access is not supported by this noninteractive workflow.
-- **`site`** connects using the inventory account and verifies development-user login and sudo before configuring the host. It requires Python and working SSH access, just like a local controller run.
-- **`maintenance`** upgrades packages. Autoremove/purge and reboots remain disabled unless enabled through their existing inventory variables.
+Use separate environments if bootstrap and routine runs require different keys. Bootstrap creates the account and approved keys without restricting SSH. Afterward, use the routine environment for `site`. If root login is disabled and `dev` works, skip bootstrap.
 
-The `host` input is one exact inventory alias, such as `dev01`. Wildcards, comma-separated targets, and command-line options are rejected. The selected playbook must resolve to exactly that host; an empty match fails instead of silently succeeding.
+Password-only initial root access requires a [local bootstrap run](development.md#bootstrap-and-apply); the workflow is noninteractive. Keep provider-console access available for recovery.
 
-Check mode is the same partial simulation documented in the main README. It still connects to the host and performs read-only probes; a fresh host can fail later checks because simulated installations do not create files. It is not proof that an apply run will succeed.
+## 3. Check, review, and apply
 
-## Execution and credential handling
+1. Open **Actions → Deploy Ansible manually → Run workflow**.
+2. Select the default branch, the prepared environment, one exact inventory alias such as `dev01`, and a playbook.
+3. Select `check` and review the Ansible output.
+4. Run again with the same inputs and `apply` to make changes. Each run records its commit; review intervening default-branch changes before applying.
 
-The workflow installs pinned dependencies and runs repository checks before the deployment step receives secrets. It writes inventory, the SSH key, and trusted host keys into a private temporary directory, validates key formats, checks playbook syntax and host selection, and invokes Ansible without interactive prompts or `--diff`. Sudo authentication is passed through Ansible's supported environment variable, not command-line arguments. Temporary credential files are removed on exit, including ordinary failures and cancellation signals.
+`site` performs routine configuration. `maintenance` upgrades packages; autoremove/purge and reboots require explicit [configuration](configuration.md#common-host-overrides). For initial account creation, select `bootstrap` as described above.
 
-Deployments share a repository-wide concurrency group and do not cancel a running deployment. GitHub's default concurrency behavior retains at most one pending run; a newer pending run can replace an older one. Each run uses the selected default-branch commit and records it in the Actions run.
+Check mode still connects and performs read-only probes. On a fresh host it can fail when an earlier simulated installation has not created a required file or command. Investigate failures; check mode is not proof that apply will succeed, and checks must not be disabled to accommodate it.
 
-The workflow does not perform Codex login, ClickUp login, or Moshi pairing. Those remain separate account-onboarding operations. It also cannot use controller-local files referenced by `dev_host_codex_config_source` or `dev_host_codex_instructions_source` unless you deliberately make those files available to the runner; leave those settings empty to preserve existing files.
+Host patterns and multiple targets are rejected. The selected playbook must resolve to exactly the requested host; an empty match fails. Runs share one concurrency group: a running deployment is not canceled, but a newer pending run can replace an older pending run.
 
-This change provides the workflow and setup instructions. It does not create a GitHub environment, install secrets, modify host access, or dispatch a deployment. Standard GitHub Actions usage/billing applies to manual runs.
+## Execution details
 
-## Validation
+The workflow installs pinned dependencies through `scripts/setup` and runs `scripts/check` before the deployment step receives secrets. The runner validates key formats, playbook syntax, and host selection; enforces SSH host-key checking; and invokes Ansible without prompts or `--diff`. Private temporary credential files are removed on exit and ordinary cancellation signals. Sudo authentication is passed through the environment. The account-creation hash is excluded from routine Ansible subprocesses.
 
-`scripts/check` includes offline deployment-runner regression tests. They exercise mode selection, exact-host enforcement, private file permissions, credential cleanup, and failure propagation with stubbed commands; they never connect to a VPS. Workflow syntax is additionally checked with actionlint during development.
+Codex/ClickUp login and Moshi pairing remain [interactive onboarding](configuration.md#account-onboarding). Controller-local configuration files must be available on the runner before setting their source paths; leave those settings empty to preserve existing files.
 
-References: [manual workflow inputs](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs), [deployment environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments), [workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+See [verification](development.md#verification) for automated checks and their limits. GitHub documents [manual inputs](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs), [environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments), and [concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).

@@ -55,10 +55,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - name: Install pinned Ansible dependencies
-        run: |
-          python -m venv .venv
-          .venv/bin/pip install -r requirements-dev.txt
-          .venv/bin/ansible-galaxy collection install -r requirements.yml -p .ansible/collections
+        run: scripts/setup
       - name: Validate the checked-out playbooks
         run: scripts/check
       - name: Run the selected playbook
