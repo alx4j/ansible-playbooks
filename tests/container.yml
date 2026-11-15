@@ -1,0 +1,75 @@
+---
+- name: Exercise account convergence and SSH candidate validation in a disposable container
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    dev_host_user: ansibletest
+    dev_host_authorized_keys:
+      - "{{ lookup('ansible.builtin.file', '/tmp/ansible-test-key.pub') }}"
+    dev_host_passwordless_sudo: true
+    dev_host_moshi_manage_service: false
+  tasks:
+    - name: Apply the production account tasks
+      ansible.builtin.import_role:
+        name: dev_host
+        tasks_from: account
+
+    - name: Inspect the created account
+      ansible.builtin.command:
+        argv:
+          - getent
+          - passwd
+          - ansibletest
+      register: dev_host_test_account
+      changed_when: false
+
+    - name: Verify the shell and home directory
+      ansible.builtin.assert:
+        that:
+          - "':/home/ansibletest:/bin/bash' in dev_host_test_account.stdout"
+
+    - name: Verify the account can escalate without a password when requested
+      become: true
+      become_user: ansibletest
+      ansible.builtin.command:
+        argv:
+          - sudo
+          - -n
+          - id
+          - -u
+      register: dev_host_test_sudo
+      changed_when: false
+
+    - name: Require actual sudo success
+      ansible.builtin.assert:
+        that:
+          - dev_host_test_sudo.stdout == '0'
+
+    - name: Install the production SSH validator for testing
+      ansible.builtin.copy:
+        src: ../roles/dev_host/files/validate_ssh.py
+        dest: /tmp/validate-ssh-dropin
+        mode: "0755"
+
+    - name: Apply the production SSH template with full validation
+      ansible.builtin.template:
+        src: ../roles/dev_host/templates/ssh-hardening.conf.j2
+        dest: /etc/ssh/sshd_config.d/00-hardening.conf
+        mode: "0644"
+        validate: /tmp/validate-ssh-dropin %s /etc/ssh/sshd_config.d/00-hardening.conf no no no
+
+    - name: Inspect the actual effective SSH configuration
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sshd
+          - -T
+      register: dev_host_test_sshd
+      changed_when: false
+
+    - name: Require the requested effective authentication policy
+      ansible.builtin.assert:
+        that:
+          - "'permitrootlogin no' in dev_host_test_sshd.stdout_lines"
+          - "'passwordauthentication no' in dev_host_test_sshd.stdout_lines"
+          - "'kbdinteractiveauthentication no' in dev_host_test_sshd.stdout_lines"

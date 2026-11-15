@@ -1,0 +1,8 @@
+.git
+.venv
+.ansible
+.cache
+private
+inventories/local
+__pycache__
+*.log

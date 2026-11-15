@@ -1,0 +1,34 @@
+---
+- name: Open a fresh SSH connection
+  ansible.builtin.meta: reset_connection
+
+- name: Verify the connected account
+  become: false
+  ansible.builtin.command:
+    argv:
+      - id
+      - -un
+  register: dev_host_connected_account
+  changed_when: false
+  check_mode: false
+
+- name: Require development access before configuring SSH restrictions
+  ansible.builtin.assert:
+    that:
+      - dev_host_connected_account.stdout == dev_host_user
+    fail_msg: Run bootstrap.yml first, then connect as the development user for site.yml.
+
+- name: Verify privilege escalation on the fresh connection
+  become: true
+  ansible.builtin.command:
+    argv:
+      - id
+      - -u
+  register: dev_host_privileged_account
+  changed_when: false
+  check_mode: false
+
+- name: Require administrative access
+  ansible.builtin.assert:
+    that:
+      - dev_host_privileged_account.stdout == '0'

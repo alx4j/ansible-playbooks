@@ -1,0 +1,26 @@
+---
+- name: Exercise actual tool installations in a disposable container
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    dev_host_user: ansibletest
+    dev_host_moshi_manage_service: false
+    dev_host_codex_config_source: /work/tests/fixtures/codex-config.toml
+  tasks:
+    - name: Install Java using the production tasks
+      ansible.builtin.import_role:
+        name: dev_host
+        tasks_from: java
+
+    - name: Install tools using the production tasks
+      become: true
+      become_user: "{{ dev_host_user }}"
+      environment:
+        HOME: "{{ dev_host_home }}"
+        SDKMAN_DIR: "{{ dev_host_home }}/.sdkman"
+        JAVA_HOME: "{{ dev_host_java_home }}"
+        PATH: "{{ dev_host_home }}/.local/bin:{{ dev_host_java_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+      ansible.builtin.import_role:
+        name: dev_host
+        tasks_from: user_tools

@@ -1,0 +1,49 @@
+---
+- name: Validate host inputs
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Verify replacement administrative access
+  ansible.builtin.import_tasks: access.yml
+
+- name: Install the combined system package set
+  ansible.builtin.apt:
+    name: "{{ dev_host_base_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Maintain the development account
+  ansible.builtin.import_tasks: account.yml
+
+- name: Suppress the static login message
+  ansible.builtin.copy:
+    dest: /etc/motd
+    content: ""
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure automatic updates
+  ansible.builtin.import_tasks: automatic_updates.yml
+
+- name: Configure Java
+  ansible.builtin.import_tasks: java.yml
+
+- name: Configure development tools in the user's home
+  become: true
+  become_user: "{{ dev_host_user }}"
+  environment:
+    HOME: "{{ dev_host_home }}"
+    SDKMAN_DIR: "{{ dev_host_home }}/.sdkman"
+    JAVA_HOME: "{{ dev_host_java_home }}"
+    PATH: "{{ dev_host_home }}/.local/bin:{{ dev_host_java_home }}/bin:/usr/local/bin:/usr/bin:/bin"
+  ansible.builtin.import_tasks: user_tools.yml
+
+- name: Configure persistent user services
+  ansible.builtin.import_tasks: user_services.yml
+
+- name: Configure firewall rules
+  ansible.builtin.import_tasks: firewall.yml
+
+- name: Configure and verify SSH restrictions
+  ansible.builtin.import_tasks: ssh.yml

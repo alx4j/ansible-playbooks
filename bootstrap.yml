@@ -1,0 +1,13 @@
+---
+- name: Establish development access as root
+  hosts: development
+  gather_facts: true
+  serial: 1
+  vars:
+    ansible_user: root
+    ansible_become: false
+  tasks:
+    - name: Bootstrap the account and sudo access
+      ansible.builtin.import_role:
+        name: dev_host
+        tasks_from: bootstrap

@@ -1,0 +1,63 @@
+---
+- name: Look up the development account
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ dev_host_user }}"
+    fail_key: false
+
+- name: Require usable sudo authentication for a new account
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.getent_passwd[dev_host_user] != none or dev_host_passwordless_sudo or dev_host_password_hash | length > 0
+    fail_msg: A new account needs DEV_PASSWORD_HASH from your secret provider or an explicit passwordless-sudo choice.
+  no_log: true
+
+- name: Validate an optional password hash
+  ansible.builtin.assert:
+    that:
+      - dev_host_password_hash | length == 0 or dev_host_password_hash is match('^\$(6|y)\$')
+    fail_msg: Supply a SHA-512 crypt or yescrypt hash, never a plaintext password.
+  no_log: true
+
+- name: Ensure the development primary group exists
+  ansible.builtin.group:
+    name: "{{ dev_host_user }}"
+    state: present
+
+- name: Ensure the development account and sudo membership exist
+  ansible.builtin.user:
+    name: "{{ dev_host_user }}"
+    group: "{{ dev_host_user }}"
+    groups:
+      - sudo
+    append: true
+    home: "{{ dev_host_home }}"
+    shell: /bin/bash
+    create_home: true
+    state: present
+    password: "{{ dev_host_password_hash if dev_host_password_hash | length > 0 else omit }}"
+    update_password: on_create
+  no_log: true
+
+- name: Install approved SSH keys without removing existing access
+  ansible.posix.authorized_key:
+    user: "{{ dev_host_user }}"
+    key: "{{ dev_host_authorized_keys | join('\n') }}"
+    state: present
+    exclusive: false
+
+- name: Configure explicitly requested passwordless sudo
+  when: dev_host_passwordless_sudo
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/90-{{ dev_host_user }}-ansible"
+    content: "{{ dev_host_user }} ALL=(ALL:ALL) NOPASSWD: ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+
+- name: Remove this project's passwordless sudo rule when not requested
+  when: not dev_host_passwordless_sudo
+  ansible.builtin.file:
+    path: "/etc/sudoers.d/90-{{ dev_host_user }}-ansible"
+    state: absent

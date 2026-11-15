@@ -1,0 +1,35 @@
+---
+- name: Require a Debian-family package manager
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Debian'
+
+- name: Upgrade installed packages
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: safe
+
+- name: Remove and purge unused dependencies when requested
+  when: dev_host_maintenance_autoremove
+  ansible.builtin.apt:
+    autoremove: true
+    purge: true
+
+- name: Check whether a reboot is required
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: dev_host_reboot_required
+
+- name: Reboot when required and explicitly requested
+  when:
+    - dev_host_maintenance_reboot
+    - dev_host_reboot_required.stat.exists
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+
+- name: Report a pending reboot
+  when:
+    - dev_host_reboot_required.stat.exists
+    - not dev_host_maintenance_reboot
+  ansible.builtin.debug:
+    msg: The host reports that a reboot is required; no reboot was requested.

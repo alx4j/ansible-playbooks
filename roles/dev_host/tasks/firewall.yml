@@ -1,0 +1,20 @@
+---
+- name: Allow the recorded Mosh UDP port range
+  community.general.ufw:
+    rule: allow
+    port: "60000:61000"
+    proto: udp
+    comment: Mosh
+
+- name: Preserve SSH access before enabling the firewall
+  when: dev_host_enable_firewall
+  community.general.ufw:
+    rule: allow
+    port: "{{ dev_host_ssh_port | string }}"
+    proto: tcp
+    comment: SSH
+
+- name: Enable UFW only when explicitly requested
+  when: dev_host_enable_firewall
+  community.general.ufw:
+    state: enabled

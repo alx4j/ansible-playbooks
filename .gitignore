@@ -1,0 +1,9 @@
+.venv/
+.ansible/
+.cache/
+__pycache__/
+*.pyc
+*.retry
+inventories/local/
+private/
+*.log

@@ -1,0 +1,62 @@
+---
+- name: Create user tool and configuration directories
+  ansible.builtin.file:
+    path: "{{ dev_host_home }}/{{ dev_host_directory }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - .local/bin
+    - .cache/ansible-installers
+    - .local/share/moshi
+    - .config/dev-environment
+    - .codex
+  loop_control:
+    loop_var: dev_host_directory
+
+- name: Install SDKMAN and Gradle
+  ansible.builtin.import_tasks: sdkman.yml
+
+- name: Install Codex
+  ansible.builtin.import_tasks: codex.yml
+
+- name: Install Moshi
+  ansible.builtin.import_tasks: moshi.yml
+
+- name: Manage the shared development shell environment
+  become: true
+  become_user: root
+  ansible.builtin.template:
+    src: environment.sh.j2
+    dest: "{{ dev_host_home }}/.config/dev-environment/environment.sh"
+    owner: "{{ dev_host_user }}"
+    group: "{{ dev_host_user }}"
+    mode: "0644"
+    validate: /bin/bash -n %s
+
+- name: Remove the recorded unmanaged Java export before migrating it
+  ansible.builtin.lineinfile:
+    path: "{{ dev_host_home }}/.profile"
+    regexp: '^export JAVA_HOME=/usr/lib/jvm/zulu25-ca-amd64$'
+    state: absent
+
+- name: Remove the recorded unmanaged Java PATH append before migrating it
+  ansible.builtin.lineinfile:
+    path: "{{ dev_host_home }}/.profile"
+    regexp: '^export PATH="\$JAVA_HOME/bin:\$PATH"$'
+    state: absent
+
+- name: Load the managed environment in login and interactive Bash shells
+  ansible.builtin.blockinfile:
+    path: "{{ dev_host_home }}/{{ dev_host_shell_file }}"
+    create: true
+    mode: "0644"
+    marker: "# {mark} ANSIBLE DEVELOPMENT ENVIRONMENT"
+    block: |
+      if [ -r "$HOME/.config/dev-environment/environment.sh" ]; then
+        . "$HOME/.config/dev-environment/environment.sh"
+      fi
+  loop:
+    - .profile
+    - .bashrc
+  loop_control:
+    loop_var: dev_host_shell_file

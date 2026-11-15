@@ -1,0 +1,15 @@
+[Unit]
+Description=Moshi agent approval daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={{ dev_host_home }}/.local/bin/moshi-hook serve
+WorkingDirectory={{ dev_host_home }}
+Environment=HOME={{ dev_host_home }}
+Environment=PATH={{ dev_host_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

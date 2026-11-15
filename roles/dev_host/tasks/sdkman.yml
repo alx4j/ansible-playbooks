@@ -1,0 +1,74 @@
+---
+- name: Check whether SDKMAN is installed
+  ansible.builtin.stat:
+    path: "{{ dev_host_home }}/.sdkman/bin/sdkman-init.sh"
+  register: dev_host_sdkman_init
+
+- name: Download the reviewed noninteractive SDKMAN installer
+  when: not dev_host_sdkman_init.stat.exists
+  ansible.builtin.get_url:
+    url: https://get.sdkman.io?ci=true&rcupdate=false
+    dest: "{{ dev_host_home }}/.cache/ansible-installers/sdkman.sh"
+    checksum: "{{ dev_host_sdkman_installer_checksum }}"
+    mode: "0600"
+
+- name: Install SDKMAN without editing shell startup files
+  when: not dev_host_sdkman_init.stat.exists
+  ansible.builtin.command:
+    argv:
+      - /bin/bash
+      - "{{ dev_host_home }}/.cache/ansible-installers/sdkman.sh"
+    creates: "{{ dev_host_home }}/.sdkman/bin/sdkman-init.sh"
+
+- name: Configure noninteractive SDKMAN with TLS and checksum validation
+  ansible.builtin.lineinfile:
+    path: "{{ dev_host_home }}/.sdkman/etc/config"
+    regexp: "^{{ dev_host_sdkman_setting.key }}="
+    line: "{{ dev_host_sdkman_setting.key }}={{ dev_host_sdkman_setting.value }}"
+    mode: "0600"
+  loop:
+    - {key: sdkman_auto_answer, value: "true"}
+    - {key: sdkman_selfupdate_feature, value: "false"}
+    - {key: sdkman_checksum_enable, value: "true"}
+    - {key: sdkman_insecure_ssl, value: "false"}
+    - {key: sdkman_healthcheck_enable, value: "false"}
+  loop_control:
+    loop_var: dev_host_sdkman_setting
+
+- name: Verify SDKMAN initializes successfully
+  ansible.builtin.shell:
+    cmd: |
+      set -eo pipefail
+      source "$SDKMAN_DIR/bin/sdkman-init.sh"
+      sdk version
+    executable: /bin/bash
+  changed_when: false
+
+- name: Install the selected Gradle version through SDKMAN
+  ansible.builtin.shell:
+    cmd: |
+      set -eo pipefail
+      source "$SDKMAN_DIR/bin/sdkman-init.sh"
+      sdk install gradle {{ dev_host_gradle_version | quote }}
+    executable: /bin/bash
+    creates: "{{ dev_host_home }}/.sdkman/candidates/gradle/{{ dev_host_gradle_version }}/bin/gradle"
+
+- name: Select the default Gradle installation
+  ansible.builtin.file:
+    src: "{{ dev_host_home }}/.sdkman/candidates/gradle/{{ dev_host_gradle_version }}"
+    dest: "{{ dev_host_home }}/.sdkman/candidates/gradle/current"
+    state: link
+
+- name: Verify the selected Gradle installation
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_host_home }}/.sdkman/candidates/gradle/current/bin/gradle"
+      - --version
+  register: dev_host_gradle_result
+  changed_when: false
+
+- name: Require the requested Gradle version
+  when: not ansible_check_mode
+  ansible.builtin.assert:
+    that:
+      - "('Gradle ' ~ dev_host_gradle_version) in dev_host_gradle_result.stdout"

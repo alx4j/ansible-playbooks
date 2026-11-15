@@ -1,0 +1,65 @@
+---
+- name: Read the development account UID
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ dev_host_user }}"
+
+- name: Record the user runtime directory
+  ansible.builtin.set_fact:
+    dev_host_runtime_directory: "/run/user/{{ ansible_facts.getent_passwd[dev_host_user][1] }}"
+
+- name: Read the lingering state
+  ansible.builtin.command:
+    argv:
+      - loginctl
+      - show-user
+      - "{{ dev_host_user }}"
+      - --property=Linger
+      - --value
+  register: dev_host_linger_state
+  changed_when: false
+  check_mode: false
+
+- name: Enable lingering when not already enabled
+  when: dev_host_linger_state.stdout != 'yes'
+  ansible.builtin.command:
+    argv:
+      - loginctl
+      - enable-linger
+      - "{{ dev_host_user }}"
+  changed_when: true
+
+- name: Start the development user manager
+  ansible.builtin.systemd_service:
+    name: "user@{{ ansible_facts.getent_passwd[dev_host_user][1] }}.service"
+    state: started
+
+- name: Configure the Moshi user service
+  when: dev_host_moshi_manage_service
+  become: true
+  become_user: "{{ dev_host_user }}"
+  environment:
+    HOME: "{{ dev_host_home }}"
+    XDG_RUNTIME_DIR: "{{ dev_host_runtime_directory }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path={{ dev_host_runtime_directory }}/bus"
+  block:
+    - name: Create the user service directory
+      ansible.builtin.file:
+        path: "{{ dev_host_home }}/.config/systemd/user"
+        state: directory
+        mode: "0755"
+
+    - name: Install the managed Moshi service definition
+      ansible.builtin.template:
+        src: moshi-hook.service.j2
+        dest: "{{ dev_host_home }}/.config/systemd/user/moshi-hook.service"
+        mode: "0644"
+      notify: Restart Moshi user service
+
+    - name: Enable and start Moshi
+      ansible.builtin.systemd_service:
+        name: moshi-hook.service
+        scope: user
+        enabled: true
+        state: started
+        daemon_reload: true

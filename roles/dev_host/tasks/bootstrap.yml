@@ -1,0 +1,19 @@
+---
+- name: Validate bootstrap inputs
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Install administrative tools
+  ansible.builtin.apt:
+    name:
+      - sudo
+      - acl
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Establish the development account
+  ansible.builtin.import_tasks: account.yml
+
+- name: Explain the access transition
+  ansible.builtin.debug:
+    msg: Bootstrap has not restricted SSH. Run site.yml as the development user with working sudo access to finish setup.

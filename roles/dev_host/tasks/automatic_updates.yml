@@ -1,0 +1,30 @@
+---
+- name: Enable daily package index and unattended update runs
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Define automatic reboot policy without replacing distribution origins
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/52ansible-unattended-upgrades
+    content: |
+      Unattended-Upgrade::Automatic-Reboot "{{ dev_host_automatic_reboot | ternary('true', 'false') }}";
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Enable the distribution's APT timers
+  ansible.builtin.systemd_service:
+    name: "{{ dev_host_apt_timer }}"
+    enabled: true
+    state: started
+  loop:
+    - apt-daily.timer
+    - apt-daily-upgrade.timer
+  loop_control:
+    loop_var: dev_host_apt_timer

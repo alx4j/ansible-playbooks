@@ -1,0 +1,56 @@
+---
+dev_host_user: dev
+dev_host_home: "/home/{{ dev_host_user }}"
+dev_host_authorized_keys: []
+dev_host_password_hash: "{{ lookup('ansible.builtin.env', 'DEV_PASSWORD_HASH') }}"
+dev_host_passwordless_sudo: false
+dev_host_ssh_port: 22
+dev_host_ssh_permit_root_login: "no"
+dev_host_ssh_password_authentication: "no"
+dev_host_ssh_keyboard_interactive_authentication: "no"
+
+dev_host_base_packages:
+  - sudo
+  - acl
+  - unattended-upgrades
+  - apt-listchanges
+  - podman
+  - uidmap
+  - dbus-user-session
+  - podman-compose
+  - curl
+  - gnupg
+  - ca-certificates
+  - zip
+  - unzip
+  - mosh
+  - ufw
+  - tmux
+  - git
+
+dev_host_automatic_reboot: false
+dev_host_java_package: zulu25-ca-jdk-headless
+dev_host_java_architectures:
+  x86_64: amd64
+  aarch64: arm64
+dev_host_java_home: "/usr/lib/jvm/zulu25-ca-{{ dev_host_java_architectures[ansible_facts['architecture']] }}"
+dev_host_gradle_version: "9.8.2"
+dev_host_codex_version: "0.169.0"
+dev_host_moshi_version: "0.4.57"
+# Fail closed if a mutable upstream installer changes before review.
+dev_host_sdkman_installer_checksum: sha256:af65b33eed01d4fce1beb189a91710f6f22c543eb6fa82df99deddacbc399375
+dev_host_codex_installer_checksum: sha256:5a8eea5c3716b555fd8e539db7e5b0e7470bcee5693191b4758a0de373624a70
+dev_host_moshi_architectures:
+  x86_64: x86_64
+  aarch64: arm64
+dev_host_codex_config_source: ""
+dev_host_codex_instructions_source: ""
+dev_host_moshi_hook_targets:
+  - codex
+dev_host_moshi_manage_service: true
+
+# Only the recorded Mosh rule is managed by default. Enabling UFW is a
+# separate choice because the history does not establish its previous state.
+dev_host_enable_firewall: false
+dev_host_maintenance_autoremove: false
+dev_host_maintenance_reboot: false

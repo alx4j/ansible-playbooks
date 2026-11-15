@@ -1,0 +1,35 @@
+---
+- name: Download the Azul repository signing key
+  ansible.builtin.get_url:
+    url: https://repos.azul.com/azul-repo.key
+    dest: /usr/share/keyrings/azul.asc
+    owner: root
+    group: root
+    mode: "0644"
+  register: dev_host_azul_key
+
+- name: Configure repository-scoped Azul trust
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/zulu.list
+    content: "deb [signed-by=/usr/share/keyrings/azul.asc] https://repos.azul.com/zulu/deb stable main\n"
+    owner: root
+    group: root
+    mode: "0644"
+  register: dev_host_azul_repository
+
+- name: Refresh package metadata after repository changes
+  when: dev_host_azul_key.changed or dev_host_azul_repository.changed
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Install the Zulu 25 headless JDK
+  ansible.builtin.apt:
+    name: "{{ dev_host_java_package }}"
+    state: present
+
+- name: Verify the configured Java installation
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_host_java_home }}/bin/java"
+      - -version
+  changed_when: false

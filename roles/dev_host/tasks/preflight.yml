@@ -1,0 +1,33 @@
+---
+- name: Require a supported system and valid account inputs
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
+      - ansible_facts['service_mgr'] == 'systemd'
+      - ansible_facts['architecture'] in dev_host_java_architectures
+      - dev_host_user is match('^[a-z_][a-z0-9_-]*$')
+      - dev_host_user != 'root'
+      - dev_host_home == '/home/' ~ dev_host_user
+      - dev_host_authorized_keys is sequence
+      - dev_host_authorized_keys is not string
+      - dev_host_authorized_keys | length > 0
+      - dev_host_ssh_port | int > 0
+      - dev_host_ssh_port | int < 65536
+      - dev_host_ssh_permit_root_login in ['no', 'prohibit-password', 'yes']
+      - dev_host_ssh_password_authentication in ['yes', 'no']
+      - dev_host_ssh_keyboard_interactive_authentication in ['yes', 'no']
+    fail_msg: Use a Debian/Ubuntu systemd host and supply approved SSH public keys in the local inventory.
+
+- name: Validate each approved public key
+  ansible.builtin.assert:
+    that:
+      - >-
+        dev_host_public_key is match(
+          '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp[0-9]+|'
+          ~ 'sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com) [A-Za-z0-9+/=]+( .*)?$'
+        )
+    quiet: true
+  loop: "{{ dev_host_authorized_keys }}"
+  loop_control:
+    loop_var: dev_host_public_key
+    label: Approved public key

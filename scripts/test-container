@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+engine="${CONTAINER_ENGINE:-podman}"
+image="localhost/ansible-playbooks-test:local"
+"$engine" build -f tests/Containerfile -t "$image" .
+"$engine" run --rm \
+  -v "$PWD/roles:/work/roles:ro" \
+  -v "$PWD/tests:/work/tests:ro" \
+  -v "$PWD/ansible.cfg:/work/ansible.cfg:ro" \
+  -e ANSIBLE_COLLECTIONS_PATH=/opt/collections \
+  -e ANSIBLE_LOCAL_TEMP=/tmp/ansible-local \
+  "$image" bash -euo pipefail -c '
+    mkdir -p /run/sshd
+    ssh-keygen -A
+    ssh-keygen -q -t ed25519 -N "" -f /tmp/ansible-test-key
+    ansible-playbook -i localhost, tests/container.yml
+    groupadd unrelated
+    usermod -aG unrelated ansibletest
+    ssh-keygen -q -t ed25519 -N "" -f /tmp/unrelated-key
+    cat /tmp/unrelated-key.pub >> /home/ansibletest/.ssh/authorized_keys
+    ansible-playbook -i localhost, tests/container.yml > /tmp/second-run.log
+    cat /tmp/second-run.log
+    python3 -c '\''import re; from pathlib import Path; s=Path("/tmp/second-run.log").read_text(); assert re.search(r"localhost\s+:.*changed=0\s+unreachable=0\s+failed=0", s), "Second run did not converge"'\''
+    python3 -c '\''import grp; from pathlib import Path; assert "ansibletest" in grp.getgrnam("unrelated").gr_mem; assert Path("/tmp/unrelated-key.pub").read_text().strip() in Path("/home/ansibletest/.ssh/authorized_keys").read_text()'\''
+    python3 tests/container-negative.py
+  '
