@@ -14,6 +14,8 @@ The playbooks target Debian/Ubuntu hosts with Python 3, OpenSSH, APT, and system
 | `roles/dev_host/` | Shared defaults, focused tasks, templates, validation helper, and service handlers. |
 | `inventories/example/` | Documentation-only IP address and empty public-key list; copy before use. |
 
+To use GitHub Actions as the controller, see [manual GitHub deployment](docs/github-deployment.md). Deployment runs only when manually dispatched; pushes and pull requests continue to run validation only.
+
 ## Prepare the controller
 
 Use Python 3.13 and an SSH client. Install the OS's Python venv support if necessary, then:

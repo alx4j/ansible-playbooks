@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Inputs are environment variables so workflow expressions never become shell code.
+set -euo pipefail
+set +x
+cd "$(dirname "$0")/.."
+
+fail() {
+  printf '%s\n' "$1" >&2
+  exit 1
+}
+
+case "${DEPLOY_PLAYBOOK:-}" in
+  bootstrap|site|maintenance) ;;
+  *) fail 'Select bootstrap, site, or maintenance.' ;;
+esac
+case "${DEPLOY_MODE:-}" in
+  check|apply) ;;
+  *) fail 'Select check or apply mode.' ;;
+esac
+[[ "${DEPLOY_HOST:-}" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || fail 'Select one exact inventory hostname.'
+[[ -n "${DEPLOY_INVENTORY:-}" ]] || fail 'Set the ANSIBLE_INVENTORY environment variable in GitHub.'
+[[ -n "${DEPLOY_KNOWN_HOSTS:-}" ]] || fail 'Set the verified ANSIBLE_KNOWN_HOSTS environment variable in GitHub.'
+[[ -n "${DEPLOY_SSH_PRIVATE_KEY:-}" ]] || fail 'Set the ANSIBLE_SSH_PRIVATE_KEY environment secret in GitHub.'
+
+umask 077
+deployment_dir="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/ansible-deployment.XXXXXX")"
+trap 'rm -rf -- "$deployment_dir"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+printf '%s\n' "$DEPLOY_INVENTORY" > "$deployment_dir/inventory.yml"
+printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$deployment_dir/known_hosts"
+printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$deployment_dir/id"
+unset DEPLOY_INVENTORY DEPLOY_KNOWN_HOSTS DEPLOY_SSH_PRIVATE_KEY
+
+ssh-keygen -y -P '' -f "$deployment_dir/id" > /dev/null 2>&1 \
+  || fail 'The deployment SSH key is invalid or encrypted; provide a dedicated automation key.'
+ssh-keygen -l -f "$deployment_dir/known_hosts" > /dev/null 2>&1 \
+  || fail 'ANSIBLE_KNOWN_HOSTS must contain verified OpenSSH known_hosts entries.'
+
+# Routine deployment never receives the account-creation hash.
+if [[ "$DEPLOY_PLAYBOOK" != bootstrap ]]; then
+  unset DEV_PASSWORD_HASH
+fi
+export ANSIBLE_HOST_KEY_CHECKING=True
+export ANSIBLE_NOCOLOR=True
+export ANSIBLE_RETRY_FILES_ENABLED=False
+
+ssh_options="-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+ssh_options+=" -o UserKnownHostsFile=\"$deployment_dir/known_hosts\""
+ssh_options+=" -o GlobalKnownHostsFile=/dev/null -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no"
+command=(ansible-playbook -i "$deployment_dir/inventory.yml" "$DEPLOY_PLAYBOOK.yml"
+  --limit "$DEPLOY_HOST" --private-key "$deployment_dir/id" --ssh-common-args "$ssh_options")
+
+"${command[@]}" --syntax-check
+"${command[@]}" --list-hosts > "$deployment_dir/hosts.txt"
+awk -v target="$DEPLOY_HOST" '
+  /^[[:space:]]+hosts \(/ {
+    if ($0 ~ /hosts \(1\):[[:space:]]*$/) valid++; else invalid++
+  }
+  {
+    line = $0
+    sub(/^[[:space:]]+/, "", line)
+    sub(/[[:space:]]+$/, "", line)
+    if (line == target) matched++
+  }
+  END { exit !(valid == 1 && matched == 1 && invalid == 0) }
+' "$deployment_dir/hosts.txt" || fail 'The selected playbook must resolve to exactly the requested inventory host.'
+
+if [[ "$DEPLOY_MODE" == check ]]; then
+  command+=(--check)
+fi
+"${command[@]}"
