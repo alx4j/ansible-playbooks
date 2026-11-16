@@ -48,6 +48,9 @@ The inventory exposes `sudo_user` for the account name. Role inputs use the `dev
 | `dev_host_ssh_port` | Existing SSH port used by the firewall rule. Keep `ansible_port` consistent; this does not change sshd's listening port. |
 | `dev_host_enable_firewall` | Enable UFW after allowing SSH; disabled by default. |
 | `dev_host_automatic_reboot` | Allow unattended-update reboots; disabled by default. |
+| `dev_host_java_version` | Exact SDKMAN Zulu identifier; defaults to `25.0.5.0+8-zulu`. |
+| `dev_host_jenv_java_alias` | jenv alias and account default; defaults to `zulu-25`. |
+| `dev_host_jenv_revision` | Pinned jenv commit; currently the 0.6.0 release. |
 | `dev_host_gradle_version`, `dev_host_codex_version`, `dev_host_moshi_version` | Override the pinned tool versions. |
 | `dev_host_codex_config_source` | Seed `.codex/config.toml` only if absent. The application and hook installer subsequently own it. |
 | `dev_host_codex_instructions_source` | Manage `.codex/AGENTS.md` from a supplied controller-side file. |
@@ -61,18 +64,37 @@ The `site` play verifies development-user login and sudo before making SSH restr
 - A combined APT package set, including Podman, Mosh, UFW, Git, tmux, and `acl` for switching to the unprivileged tool owner. Package presence is managed, not exact APT revisions.
 - The development account and approved keys, and an empty `/etc/motd` to suppress the static login message.
 - Daily unattended updates and APT timers, preserving the distribution's allowed-origin policy. Routine runs do not upgrade all packages or purge dependencies.
-- Zulu Java through a repository-scoped signing key, plus SDKMAN and Gradle. One shared shell environment is loaded from `.profile` and `.bashrc`; the two historical Java exports are migrated.
+- Zulu Java and Gradle installed under the development account through SDKMAN, with jenv selecting Java. One shared shell environment is loaded from `.profile` and `.bashrc`; the two historical Java exports are migrated.
 - Codex, Moshi, and Codex hooks, with actual installed-version checks. User lingering and `moshi-hook.service` keep the hook daemon running. An unpaired daemon does not establish a working phone connection.
 - The Mosh UDP rule for `60000:61000`. UFW activation and its default policy remain unchanged unless firewall activation is explicitly enabled.
 - `PermitRootLogin no`, `PasswordAuthentication no`, and `KbdInteractiveAuthentication no`. The SSH validator expands the main configuration's Includes and checks syntax and effective global values before replacing the drop-in. Handlers validate and reload; a fresh connection then verifies login and sudo. Review Match-specific policies for relevant client contexts.
 
-The role owns `00-hardening.conf`, `20auto-upgrades`, `52ansible-unattended-upgrades`, `zulu.list`, the optional `90-<user>-ansible` sudoers file, and the Moshi unit. Review existing contents when adopting another host. The owned Zulu source replaces the historical key path without adding a conflicting repository entry.
+The role owns `00-hardening.conf`, `20auto-upgrades`, `52ansible-unattended-upgrades`, the optional `90-<user>-ansible` sudoers file, and the Moshi unit. Review existing contents when adopting another host. Existing system JDK packages and Azul APT repository files are preserved; new Java installations use SDKMAN.
+
+## Java selection
+
+SDKMAN installs the pinned Zulu JDK in `~/.sdkman/candidates/java/<version>`. jenv registers that directory under `zulu-25` and selects it as the account's default. The shell loads SDKMAN first, then jenv; jenv's `export` plugin sets `JAVA_HOME`. SDKMAN automatic project switching is disabled so Java selection belongs to jenv.
+
+```bash
+jenv versions
+java -version
+echo "$JAVA_HOME"
+
+cd my-project
+jenv local zulu-25
+```
+
+`jenv local` writes `.java-version`, which selects Java inside that directory and its children. Other registered JDKs and project files are preserved. Ansible owns the configured default alias; changing the account default manually is reconciled on the next run. Use jenv to switch Java, and keep Java selection out of `.sdkmanrc`.
+
+To upgrade within Java 25, change `dev_host_java_version` to an identifier available from `sdk list java`. The `zulu-25` alias follows the new installation, so projects using it follow the upgrade. For another major version, change the alias too. Older JDK installations are retained. Changing a shell's Java selection does not restart already-running Java processes.
+
+Ansible tool commands use an explicit `dev_host_java_home` derived from the pinned SDKMAN version. Services and scheduled jobs must also receive an explicit Java environment; interactive shell initialization does not configure them.
 
 ## Versions and updates
 
 Tool versions and installer checksums live in [role defaults](../roles/dev_host/defaults/main.yml). Codex and SDKMAN installer downloads use reviewed SHA-256 pins; a changed upstream script fails verification until its new content and checksum are reviewed. An existing SDKMAN installation is preserved rather than forcibly downgraded.
 
-Gradle uses SDKMAN checksum validation, Codex's installer verifies release assets, and Moshi requires a release checksum manifest. Broken installations fail visibly. Review CLI compatibility when changing versions, particularly Moshi's JSON hook diagnostics.
+Java and Gradle use SDKMAN checksum validation, jenv is pinned to a release commit, Codex's installer verifies release assets, and Moshi requires a release checksum manifest. Broken installations fail visibly. Review CLI compatibility when changing versions, particularly Moshi's JSON hook diagnostics.
 
 APT packages and application self-updaters are not frozen by these pins. The next Ansible run reconciles the selected tool versions. If strict version ownership is needed, configure application updaters through their supported settings.
 
@@ -89,4 +111,4 @@ Register the ClickUp MCP server in Codex configuration before login. OAuth crede
 
 Complete Moshi pairing in your terminal through its supported app/CLI flow. The playbook does not place pairing tokens in process arguments or repeat pairing during routine runs. `moshi-hook host setup` offers a QR-based flow; review its proposed host changes separately.
 
-References: [Azul APT installation](https://docs.azul.com/core/install/linux-ca-deb), [SDKMAN installation](https://sdkman.io/install/), [Moshi hooks](https://getmoshi.app/docs/hooks), [Ansible user accounts](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/user_module.html), and [user services](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/systemd_service_module.html).
+References: [Azul through SDKMAN](https://docs.azul.com/core/install/sdkman), [SDKMAN usage](https://sdkman.io/usage/), [jenv](https://github.com/jenv/jenv), [Moshi hooks](https://getmoshi.app/docs/hooks), [Ansible user accounts](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/user_module.html), and [user services](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/systemd_service_module.html).

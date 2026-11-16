@@ -4,7 +4,7 @@
     that:
       - ansible_facts['distribution'] in ['Debian', 'Ubuntu']
       - ansible_facts['service_mgr'] == 'systemd'
-      - ansible_facts['architecture'] in dev_host_java_architectures
+      - ansible_facts['architecture'] in ['x86_64', 'aarch64']
       - dev_host_user is match('^[a-z_][a-z0-9_-]*$')
       - dev_host_user != 'root'
       - dev_host_home == '/home/' ~ dev_host_user

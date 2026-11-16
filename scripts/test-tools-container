@@ -13,8 +13,12 @@ image="localhost/ansible-playbooks-test:local"
   "$image" bash -euo pipefail -c '
     groupadd ansibletest
     useradd -m -g ansibletest -s /bin/bash ansibletest
+    # Seed the historical exports to verify migration to the managed environment.
+    cat tests/fixtures/legacy-java-profile >> /home/ansibletest/.profile
     ansible-playbook -i localhost, tests/tools.yml
+    runuser -u ansibletest -- python3 tests/java-shell.py --prepare
     ansible-playbook -i localhost, tests/tools.yml > /tmp/second-run.log
     cat /tmp/second-run.log
     python3 -c '\''import re; from pathlib import Path; s=Path("/tmp/second-run.log").read_text(); assert re.search(r"localhost\s+:.*changed=0\s+unreachable=0\s+failed=0", s), "Tool installation did not converge"'\''
+    runuser -u ansibletest -- python3 tests/java-shell.py
   '

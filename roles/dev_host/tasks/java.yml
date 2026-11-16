@@ -1,35 +1,35 @@
 ---
-- name: Download the Azul repository signing key
-  ansible.builtin.get_url:
-    url: https://repos.azul.com/azul-repo.key
-    dest: /usr/share/keyrings/azul.asc
-    owner: root
-    group: root
-    mode: "0644"
-  register: dev_host_azul_key
+- name: Validate the selected SDKMAN Java installation
+  ansible.builtin.assert:
+    that:
+      - dev_host_java_version is match('^[0-9]+[A-Za-z0-9.+_-]*-zulu$')
+      - dev_host_java_home == dev_host_home ~ '/.sdkman/candidates/java/' ~ dev_host_java_version
+    fail_msg: Select a Zulu SDKMAN identifier and its matching installation directory.
 
-- name: Configure repository-scoped Azul trust
-  ansible.builtin.copy:
-    dest: /etc/apt/sources.list.d/zulu.list
-    content: "deb [signed-by=/usr/share/keyrings/azul.asc] https://repos.azul.com/zulu/deb stable main\n"
-    owner: root
-    group: root
-    mode: "0644"
-  register: dev_host_azul_repository
-
-- name: Refresh package metadata after repository changes
-  when: dev_host_azul_key.changed or dev_host_azul_repository.changed
-  ansible.builtin.apt:
-    update_cache: true
-
-- name: Install the Zulu 25 headless JDK
-  ansible.builtin.apt:
-    name: "{{ dev_host_java_package }}"
-    state: present
+- name: Install the selected Zulu JDK through SDKMAN
+  ansible.builtin.shell:
+    cmd: |
+      set -eo pipefail
+      source "$SDKMAN_DIR/bin/sdkman-init.sh"
+      sdk install java {{ dev_host_java_version | quote }}
+    executable: /bin/bash
+    creates: "{{ dev_host_java_home }}/bin/java"
 
 - name: Verify the configured Java installation
   ansible.builtin.command:
     argv:
       - "{{ dev_host_java_home }}/bin/java"
+      - -XshowSettings:properties
       - -version
+  register: dev_host_java_result
   changed_when: false
+
+- name: Require the selected Java major version and Azul vendor
+  when: not ansible_check_mode
+  ansible.builtin.assert:
+    that:
+      - "'java.vendor = Azul Systems, Inc.' in dev_host_java_result.stderr"
+      - >-
+        dev_host_java_result.stderr is search(
+          '(?m)^\\s*java.specification.version = ' ~ (dev_host_java_version | regex_search('^[0-9]+')) ~ '\\s*$'
+        )
