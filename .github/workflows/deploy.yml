@@ -9,11 +9,11 @@ on:
         type: string
         required: true
       bootstrap_user:
-        description: Initial administrator override (defaults to inventory account or root)
+        description: Bootstrap username
         type: string
         required: false
       bootstrap_password:
-        description: Initial password override (blank uses the saved server secret; ordinary workflow input)
+        description: Bootstrap password (SSH and sudo)
         type: string
         required: false
 
