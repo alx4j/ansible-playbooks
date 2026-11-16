@@ -64,7 +64,6 @@ class DeploymentTests(unittest.TestCase):
             "RUNNER_TEMP": str(self.runtime),
             "TEST_CALLS": str(self.calls),
             "DEPLOY_PLAYBOOK": "site",
-            "DEPLOY_MODE": "check",
             "DEPLOY_HOST": "dev01",
             "DEPLOY_INVENTORY": "test inventory placeholder",
             "DEPLOY_KNOWN_HOSTS": "test host key placeholder",
@@ -85,11 +84,11 @@ class DeploymentTests(unittest.TestCase):
             self.assertNotIn(sensitive, result.stdout + result.stderr + json.dumps(calls))
         return result, calls
 
-    def test_check_mode_and_credential_isolation(self):
+    def test_configuration_and_credential_isolation(self):
         result, calls = self.run_deployment()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(calls), 3)
-        self.assertIn("--check", calls[-1]["args"])
+        self.assertNotIn("--check", calls[-1]["args"])
         for call in calls:
             for key in ["inventory_private", "key_private", "directory_private", "control_directory_private", "control_directory_isolated", "raw_key_removed", "has_become_password"]:
                 self.assertTrue(call[key])
@@ -99,8 +98,8 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("StrictHostKeyChecking=yes", options)
         self.assertNotIn("--diff", calls[-1]["args"])
 
-    def test_apply_mode_and_bootstrap_hash(self):
-        result, calls = self.run_deployment(DEPLOY_MODE="apply", DEPLOY_PLAYBOOK="bootstrap")
+    def test_bootstrap_receives_the_account_hash(self):
+        result, calls = self.run_deployment(DEPLOY_PLAYBOOK="bootstrap")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("bootstrap.yml", calls[-1]["args"])
         self.assertNotIn("--check", calls[-1]["args"])
@@ -113,7 +112,7 @@ class DeploymentTests(unittest.TestCase):
             DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("--check", calls[-1]["args"])
+        self.assertNotIn("--check", calls[-1]["args"])
         for call in calls:
             for key in ["password_private", "password_matches", "directory_private", "raw_password_removed", "raw_key_removed"]:
                 self.assertTrue(call[key])
@@ -127,7 +126,7 @@ class DeploymentTests(unittest.TestCase):
 
     def test_bootstrap_password_takes_precedence_over_key(self):
         result, calls = self.run_deployment(
-            DEPLOY_PLAYBOOK="bootstrap", DEPLOY_MODE="apply",
+            DEPLOY_PLAYBOOK="bootstrap",
             DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -136,7 +135,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertNotIn("--check", calls[-1]["args"])
 
     def test_routine_runs_ignore_bootstrap_credentials(self):
-        for playbook in ["site", "maintenance"]:
+        for playbook in ["site", "access"]:
             with self.subTest(playbook=playbook):
                 result, calls = self.run_deployment(
                     DEPLOY_PLAYBOOK=playbook,
@@ -198,7 +197,7 @@ class DeploymentTests(unittest.TestCase):
 
     def test_password_failure_propagates_and_cleans_credentials(self):
         result, _ = self.run_deployment(
-            DEPLOY_PLAYBOOK="bootstrap", DEPLOY_MODE="apply", DEPLOY_SSH_PRIVATE_KEY="",
+            DEPLOY_PLAYBOOK="bootstrap", DEPLOY_SSH_PRIVATE_KEY="",
             DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder", TEST_APPLY_EXIT="4",
         )
         self.assertEqual(result.returncode, 4)
@@ -215,6 +214,13 @@ class DeploymentTests(unittest.TestCase):
         result, calls = self.run_deployment(TEST_HOST_LIST="    hosts (0):")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(len(calls), 2)
+
+    def test_rejects_unexpected_playbooks_before_ansible(self):
+        for playbook in ["maintenance", "../../other", "site; id"]:
+            with self.subTest(playbook=playbook):
+                result, calls = self.run_deployment(DEPLOY_PLAYBOOK=playbook)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(calls, [])
 
     def test_missing_configuration_fails_before_ansible(self):
         for name in ["DEPLOY_INVENTORY", "DEPLOY_KNOWN_HOSTS", "DEPLOY_SSH_PRIVATE_KEY"]:

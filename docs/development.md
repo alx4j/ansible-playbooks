@@ -39,14 +39,6 @@ Local check mode is a partial simulation: read-only probes run, while simulated 
 
 Omit `--ask-become-pass` only when sudo already works without a prompt. Keep provider-console access available for recovery when changing SSH or sudo.
 
-For package maintenance:
-
-```bash
-.venv/bin/ansible-playbook -i inventories/local/hosts.yml maintenance.yml --limit dev01 --ask-become-pass
-```
-
-Autoremove/purge and reboots require explicit [host overrides](configuration.md#common-host-overrides).
-
 ## Verification
 
 ```bash
@@ -61,11 +53,11 @@ scripts/test-tools-container
 | `scripts/test-container` | Real account creation and sudo; preservation of unrelated groups/keys; SSH candidate validation; zero changes on the second run; root and sudo-user password bootstrap followed by development-key login and sudo through loopback SSH. |
 | `scripts/test-tools-container` | Actual Java, SDKMAN, Gradle, Codex, and Moshi installations, followed by a second run requiring zero changes. |
 
-Deployment-runner unit tests check target selection, check/apply modes, password/key selection, credential permissions and cleanup, and failure propagation. Workflow tests cover form validation, generated inventory, the automatic credential handoff, reruns, failure boundaries, and first-step masking. The container SSH test runs both deployment scripts against focused account/access fixtures and the production access probe. It rejects incorrect login/sudo passwords and untrusted host keys, verifies that fresh-host check mode creates no account, and follows account creation with a fresh `dev` key/sudo connection in the same run. Reruns skip the initial administrator and converge with zero changes. These fixtures do not execute the full systemd-dependent playbooks.
+Deployment-runner unit tests check target selection, password/key selection, credential permissions and cleanup, and failure propagation. Workflow tests cover form validation, generated inventory, the automatic credential handoff, reruns, failure boundaries, and first-step masking. The container SSH test runs both deployment scripts against the production access playbook and a focused account fixture. It rejects incorrect login/sudo passwords and untrusted host keys, verifies that the access probe creates no account, and follows account creation with a fresh `dev` key/sudo connection in the same run. Reruns skip the initial administrator and converge with zero changes. These tests do not execute the full systemd-dependent playbooks.
 
 Container tests use Podman by default; set `CONTAINER_ENGINE=docker` to use Docker. They build a disposable Debian 13 image and download upstream packages. No production credentials are mounted or pairing performed. Containers are removed; the test image remains cached.
 
-CI runs `scripts/check`, the focused account/SSH container tests, and actionlint for GitHub workflows. The actionlint version is pinned in [the validation workflow](../.github/workflows/validate.yml); its [official image](https://github.com/rhysd/actionlint/blob/v1.7.12/docs/usage.md#docker) includes ShellCheck and Pyflakes. To check workflows locally with that image:
+CI runs `scripts/check`, the focused account/SSH container tests, and actionlint on pull requests and pushes to `main`, avoiding duplicate checks for each PR update. The actionlint version is pinned in [the validation workflow](../.github/workflows/validate.yml); its [official image](https://github.com/rhysd/actionlint/blob/v1.7.12/docs/usage.md#docker) includes ShellCheck and Pyflakes. To check workflows locally with that image:
 
 ```bash
 podman run --rm -v "$PWD:/repo:ro" --workdir /repo docker.io/rhysd/actionlint:1.7.12

@@ -1,10 +1,10 @@
 # Manual deployment from GitHub Actions
 
-**Bootstrap dev server** creates development access and configures the server in one run. **Maintain dev server** handles package upgrades separately. Both workflows are manual; merge them into the default branch before using **Run workflow**. Pushes, pull requests, and merges do not deploy.
+**Bootstrap dev server** creates development access and configures the server in one manual run. Pushes, pull requests, and merges do not deploy.
 
 ## 1. Configure the environment
 
-Use the `development` environment in **Settings → Environments**, creating it if needed. Both workflows always use this environment. Restrict deployment branches to the default branch; the jobs also skip other branches. Environment features depend on repository visibility and GitHub plan.
+Use the `development` environment in **Settings → Environments**, creating it if needed. The workflow always uses this environment. Restrict deployment branches to the default branch; the job also skips other branches. Environment features depend on repository visibility and GitHub plan.
 
 Save these settings once. The workflow builds its inventory from the run form; no inventory YAML is needed in GitHub.
 
@@ -18,8 +18,6 @@ Save these settings once. The workflow builds its inventory from the run form; n
 Choose `DEV_PASSWORD` for a new account; if `dev` already exists, supply its current sudo password. Bootstrap preserves existing passwords. Updating the secret does not rotate an existing account's password. Use a single-line value of at most 256 UTF-8 bytes.
 
 `DOPPLER_TOKEN` is reserved for later Doppler setup on the target. This workflow does not read it, fetch bootstrap credentials from Doppler, or install the token on the server yet.
-
-If upgrading from the previous workflow, replace `DEV_PASSWORD_HASH` and `ANSIBLE_BECOME_PASSWORD` with `DEV_PASSWORD`. `ANSIBLE_INVENTORY`, `ANSIBLE_BOOTSTRAP_PASSWORD`, and `ANSIBLE_BOOTSTRAP_BECOME_PASSWORD` are no longer read by the workflow.
 
 Obtain the server's SSH host key through a trusted channel such as the provider console. The entry must match the address entered in the form. For a nondefault SSH port, use `[hostname]:port` in `known_hosts` and set `ANSIBLE_SSH_PORT`. An unverified `ssh-keyscan` result does not establish trust.
 
@@ -52,17 +50,13 @@ On later runs, use the same workflow and server address. Working `dev` key and s
 
 Open **Actions → Bootstrap dev server → Run workflow**, select the default branch, and enter the server address. Initial credentials can be left blank when `dev` access works; the saved `development` environment supplies the key and sudo password. Clicking **Run workflow** applies the configuration directly. Review the server address and default-branch changes before running; each run records its commit.
 
-The generated inventory contains one host, internally named `dev01`, with the `dev` account and deployment public key. Host patterns, SSH options, and multiple targets are rejected. Every stage must resolve to exactly that host; an empty match fails. Setup and maintenance share one concurrency group: a running deployment is not canceled, but a newer pending run can replace an older pending run.
-
-## 4. Upgrade packages
-
-Open **Actions → Maintain dev server → Run workflow**, select the default branch, and enter the server address. Choose `check` to preview package upgrades, then `apply` to perform them. This workflow requires existing `dev` key and sudo access and never uses initial administrator credentials. Autoremove/purge and reboots require explicit [configuration](configuration.md#common-host-overrides).
+The generated inventory contains one host, internally named `dev01`, with the `dev` account and deployment public key. Host patterns, SSH options, and multiple targets are rejected. Every stage must resolve to exactly that host; an empty match fails. Setup runs are serialized: a running deployment is not canceled, but a newer pending run can replace an older pending run.
 
 ## Execution details
 
-The setup workflow's first step reads the bootstrap password from `GITHUB_EVENT_PATH` and registers its log mask before checkout. It is never interpolated into shell code or a step's environment declaration. Both workflows install pinned dependencies through `scripts/setup` and run `scripts/check` before passing the saved environment secrets to the deployment step.
+The workflow's first step reads the bootstrap password from `GITHUB_EVENT_PATH` and registers its log mask before checkout. It is never interpolated into shell code or a step's environment declaration. The workflow installs pinned dependencies through `scripts/setup` and runs `scripts/check` before passing the saved environment secrets to the deployment step.
 
-`scripts/github-deploy.py` validates the form fields, derives the public key with `ssh-keygen`, and builds a temporary inventory. Setup supplies no mode input and defaults to applying changes. It runs `access.yml` to verify `dev` login and sudo. An unreachable `dev` connection triggers `bootstrap.yml`; task and sudo failures stop the run. Both paths then run `site.yml`, which verifies fresh development access before configuration. Maintenance calls the same adapter with `--maintenance` to run only `maintenance.yml` using its selected check/apply mode.
+`scripts/github-deploy.py` validates the form fields, derives the public key with `ssh-keygen`, and builds a temporary inventory. It runs `access.yml` to verify `dev` login and sudo. An unreachable `dev` connection triggers `bootstrap.yml`; task and sudo failures stop the run. Both paths then run `site.yml`, which verifies fresh development access before configuration.
 
 Only initial account creation derives a salted SHA-512 crypt hash from `DEV_PASSWORD` through OpenSSL stdin and masks the hash. The development account uses `update_password: on_create`, so existing passwords are preserved. Initial SSH/sudo credentials are isolated to the account-creation stage; configuration uses the deployment key and `DEV_PASSWORD`.
 

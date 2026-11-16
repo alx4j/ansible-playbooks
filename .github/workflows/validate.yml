@@ -1,6 +1,8 @@
 name: Validate playbooks
 on:
   push:
+    branches:
+      - main
   pull_request:
 permissions:
   contents: read

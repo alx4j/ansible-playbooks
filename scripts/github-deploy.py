@@ -1,6 +1,5 @@
 """Run server setup with an automatic handoff to development-user access."""
 
-import argparse
 import ipaddress
 import json
 import os
@@ -43,10 +42,6 @@ def prepare_environment(event, environment):
     if not isinstance(event, dict) or not isinstance(event.get("inputs"), dict):
         raise ValueError("The workflow event must contain deployment inputs.")
     inputs = event.get("inputs", {})
-    mode = inputs.get("mode", "apply")
-    if mode not in ("check", "apply"):
-        raise ValueError("Select check or apply mode.")
-
     address = inputs.get("server_address", "")
     if not isinstance(address, str) or not address:
         raise ValueError("Provide the server IP address or hostname.")
@@ -100,8 +95,7 @@ def prepare_environment(event, environment):
         "dev_host_authorized_keys": [public_key(env["DEPLOY_SSH_PRIVATE_KEY"])],
     }
     inventory = {"all": {"children": {"development": {"hosts": {"dev01": host}}}}}
-    env.update({"DEPLOY_HOST": "dev01", "DEPLOY_MODE": mode,
-                "DEPLOY_INVENTORY": json.dumps(inventory)})
+    env.update({"DEPLOY_HOST": "dev01", "DEPLOY_INVENTORY": json.dumps(inventory)})
     return env
 
 
@@ -119,10 +113,8 @@ def configure_server(env, initial_password):
     if access.returncode:
         # Ansible uses 4 for an unreachable host. Authentication failures for a
         # missing dev account are expected on first setup; task/sudo failures are not.
-        if access.returncode != 4 or env["DEPLOY_MODE"] == "check":
+        if access.returncode != 4:
             print(access.stdout + access.stderr, file=sys.stderr)
-            if access.returncode == 4 and env["DEPLOY_MODE"] == "check":
-                print("Development access is not ready. Use apply for first setup; check cannot create the account.", file=sys.stderr)
             return access.returncode
 
         print("Establishing development access through the initial administrator.", flush=True)
@@ -141,16 +133,11 @@ def configure_server(env, initial_password):
     return run_playbook(env, "site").returncode
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--maintenance", action="store_true", help="Upgrade packages using existing development access.")
-    args = parser.parse_args(argv)
+def main():
     try:
         with open(os.environ["GITHUB_EVENT_PATH"]) as event_file:
             event = json.load(event_file)
         env = prepare_environment(event, dict(os.environ))
-        if args.maintenance:
-            return run_playbook(env, "maintenance").returncode
         return configure_server(env, event["inputs"].get("bootstrap_password", ""))
     except (OSError, KeyError, json.JSONDecodeError, subprocess.TimeoutExpired):
         print("Could not prepare deployment inputs or run the deployment tools.", file=sys.stderr)
@@ -161,4 +148,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) != 1:
+        raise SystemExit("This workflow runner accepts no command-line arguments.")
     raise SystemExit(main())

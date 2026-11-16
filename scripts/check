@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 export PATH="$PWD/.venv/bin:$PATH"
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ansible-lint
-for playbook in access.yml bootstrap.yml site.yml maintenance.yml; do
+for playbook in access.yml bootstrap.yml site.yml; do
   ansible-playbook -i inventories/example/hosts.yml "$playbook" --syntax-check
   ansible-playbook -i inventories/example/hosts.yml "$playbook" --list-hosts --list-tasks
 done
