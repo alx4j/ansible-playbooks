@@ -4,7 +4,7 @@ The **Deploy Ansible manually** workflow runs only through `workflow_dispatch`. 
 
 ## 1. Configure the environment
 
-Create an environment such as `development` in **Settings → Environments**. Restrict deployment branches to the default branch; the deployment job also skips other branches. Environment features depend on repository visibility and GitHub plan.
+Use the `development` environment in **Settings → Environments**, creating it if needed. The workflow always uses this environment; there is no environment selector in the run form. Restrict deployment branches to the default branch; the deployment job also skips other branches. Environment features depend on repository visibility and GitHub plan.
 
 Save these settings once. The workflow builds its inventory from the run form; no inventory YAML is needed in GitHub.
 
@@ -51,11 +51,17 @@ When a bootstrap password is supplied, bootstrap uses it without falling back to
 ## 3. Check, review, and apply
 
 1. Open **Actions → Deploy Ansible manually → Run workflow**.
-2. Select the default branch, the prepared environment, a playbook, and the server address. Only bootstrap needs the initial account fields.
-3. Select `check` and review the Ansible output.
+2. Select the default branch, a playbook, and the server address. The workflow uses the saved `development` environment settings. Only bootstrap needs the initial account fields.
+3. Select `check` to preview likely changes and review the Ansible output.
 4. Run again with the same inputs and `apply` to make changes. Each run records its commit; review intervening default-branch changes before applying.
 
-`site` performs routine configuration. `maintenance` upgrades packages; autoremove/purge and reboots require explicit [configuration](configuration.md#common-host-overrides). For initial account creation, select `bootstrap` as described above.
+A playbook is a set of tasks. Choose it based on what you want to do:
+
+| Playbook | What it does |
+| --- | --- |
+| `bootstrap` | Create `dev` with sudo and SSH key access using the initial administrator. Run this first on a new server. |
+| `site` | Configure the server's tools, updates, and SSH policy after `dev` access works. |
+| `maintenance` | Upgrade installed packages. Autoremove/purge and reboots require explicit [configuration](configuration.md#common-host-overrides). |
 
 Check mode still connects and performs read-only probes. On a fresh host it can fail when an earlier simulated installation has not created a required file or command. Investigate failures; check mode is not proof that apply will succeed, and checks must not be disabled to accommodate it.
 
