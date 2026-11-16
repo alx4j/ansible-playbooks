@@ -13,8 +13,6 @@ image="localhost/ansible-playbooks-test:local"
   "$image" bash -euo pipefail -c '
     groupadd ansibletest
     useradd -m -g ansibletest -s /bin/bash ansibletest
-    # Seed the historical exports to verify migration to the managed environment.
-    cat tests/fixtures/legacy-java-profile >> /home/ansibletest/.profile
     ansible-playbook -i localhost, tests/tools.yml
     runuser -u ansibletest -- python3 tests/java-shell.py --prepare
     ansible-playbook -i localhost, tests/tools.yml > /tmp/second-run.log

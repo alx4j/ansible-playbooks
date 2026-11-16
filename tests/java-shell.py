@@ -42,7 +42,6 @@ def main():
     assert (jenv / "versions" / alias).resolve(strict=True) == java_home
     assert (jenv / "plugins/export").is_symlink()
     assert "sdkman_auto_env=false" in (home / ".sdkman/etc/config").read_text().splitlines()
-    assert "export JAVA_HOME=/usr/lib/jvm/zulu25-ca-amd64" not in (home / ".profile").read_text()
 
     environment = {"HOME": str(home), "USER": account.pw_name, "LOGNAME": account.pw_name,
                    "SHELL": "/bin/bash", "PATH": "/usr/local/bin:/usr/bin:/bin", "TERM": "dumb"}

@@ -64,12 +64,12 @@ The `site` play verifies development-user login and sudo before making SSH restr
 - A combined APT package set, including Podman, Mosh, UFW, Git, tmux, and `acl` for switching to the unprivileged tool owner. Package presence is managed, not exact APT revisions.
 - The development account and approved keys, and an empty `/etc/motd` to suppress the static login message.
 - Daily unattended updates and APT timers, preserving the distribution's allowed-origin policy. Routine runs do not upgrade all packages or purge dependencies.
-- Zulu Java and Gradle installed under the development account through SDKMAN, with jenv selecting Java. One shared shell environment is loaded from `.profile` and `.bashrc`; the two historical Java exports are migrated.
+- Zulu Java and Gradle installed under the development account through SDKMAN, with jenv selecting Java. One shared shell environment is loaded from `.profile` and `.bashrc`.
 - Codex, Moshi, and Codex hooks, with actual installed-version checks. User lingering and `moshi-hook.service` keep the hook daemon running. An unpaired daemon does not establish a working phone connection.
 - The Mosh UDP rule for `60000:61000`. UFW activation and its default policy remain unchanged unless firewall activation is explicitly enabled.
 - `PermitRootLogin no`, `PasswordAuthentication no`, and `KbdInteractiveAuthentication no`. The SSH validator expands the main configuration's Includes and checks syntax and effective global values before replacing the drop-in. Handlers validate and reload; a fresh connection then verifies login and sudo. Review Match-specific policies for relevant client contexts.
 
-The role owns `00-hardening.conf`, `20auto-upgrades`, `52ansible-unattended-upgrades`, the optional `90-<user>-ansible` sudoers file, and the Moshi unit. Review existing contents when adopting another host. Existing system JDK packages and Azul APT repository files are preserved; new Java installations use SDKMAN.
+The role owns `00-hardening.conf`, `20auto-upgrades`, `52ansible-unattended-upgrades`, the optional `90-<user>-ansible` sudoers file, and the Moshi unit. Review existing contents when adopting another host.
 
 ## Java selection
 

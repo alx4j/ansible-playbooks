@@ -19,7 +19,6 @@ dev_host_base_packages:
   - dbus-user-session
   - podman-compose
   - curl
-  - gnupg
   - ca-certificates
   - zip
   - unzip

@@ -42,18 +42,6 @@
     mode: "0644"
     validate: /bin/bash -n %s
 
-- name: Remove the recorded unmanaged Java export before migrating it
-  ansible.builtin.lineinfile:
-    path: "{{ dev_host_home }}/.profile"
-    regexp: '^export JAVA_HOME=/usr/lib/jvm/zulu25-ca-amd64$'
-    state: absent
-
-- name: Remove the recorded unmanaged Java PATH append before migrating it
-  ansible.builtin.lineinfile:
-    path: "{{ dev_host_home }}/.profile"
-    regexp: '^export PATH="\$JAVA_HOME/bin:\$PATH"$'
-    state: absent
-
 - name: Load the managed environment in login and interactive Bash shells
   ansible.builtin.blockinfile:
     path: "{{ dev_host_home }}/{{ dev_host_shell_file }}"

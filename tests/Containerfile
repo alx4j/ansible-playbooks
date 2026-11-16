@@ -1,6 +1,6 @@
 FROM docker.io/library/debian:13-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-venv python3-apt sudo acl openssh-server ca-certificates curl gnupg git zip unzip \
+    python3 python3-venv python3-apt sudo acl openssh-server ca-certificates curl git zip unzip \
     && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/ansible \
     && /opt/ansible/bin/pip install --no-cache-dir ansible-core==2.19.15
