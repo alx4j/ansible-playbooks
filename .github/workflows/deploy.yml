@@ -1,7 +1,11 @@
-name: Bootstrap dev server
-run-name: Bootstrap dev server
+name: Bootstrap VPS
+run-name: Bootstrap VPS
 
 on:
+  workflow_run:
+    workflows: [Validate playbooks]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       server_address:
@@ -27,12 +31,21 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_sha == github.sha &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: development
     steps:
       - name: Mask the bootstrap password before other steps
+        if: github.event_name == 'workflow_dispatch'
         # Read the event file so the value never appears in a step's env header.
         run: |
           python3 - <<'PY'
@@ -48,6 +61,7 @@ jobs:
           PY
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -58,19 +72,25 @@ jobs:
         run: scripts/setup
       - name: Validate the checked-out playbooks
         run: scripts/check
-      - name: Resolve the server's saved bootstrap credential
-        id: target
-        run: |
-          export PATH="$PWD/.venv/bin:$PATH"
-          python3 scripts/github-deploy.py --resolve-target
-      - name: Bootstrap and configure the development server
+      - name: Configure inventory servers with existing access
+        if: github.event_name == 'workflow_run'
         env:
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
           DEPLOY_SUDO_USER: ${{ vars.SUDO_USER }}
           SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
-          DEPLOY_BOOTSTRAP_SECRET: ${{ secrets[steps.target.outputs.bootstrap_password_secret] }}
+        run: |
+          export PATH="$PWD/.venv/bin:$PATH"
+          python3 scripts/github-deploy.py --update-inventory
+      - name: Bootstrap and configure the selected server
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
+          DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+          DEPLOY_SUDO_USER: ${{ vars.SUDO_USER }}
+          SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
         run: |
           export PATH="$PWD/.venv/bin:$PATH"
           python3 scripts/github-deploy.py

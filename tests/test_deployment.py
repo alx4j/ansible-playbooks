@@ -40,7 +40,10 @@ with open(os.environ["TEST_CALLS"], "a") as log:
     log.write(json.dumps(result) + "\\n")
 if "--list-hosts" in args:
     print(os.environ.get("TEST_HOST_LIST", "    hosts (1):\\n      dev01"))
-elif "--syntax-check" not in args:
+    raise SystemExit(int(os.environ.get("TEST_LIST_EXIT", "0")))
+elif "--syntax-check" in args:
+    raise SystemExit(int(os.environ.get("TEST_SYNTAX_EXIT", "0")))
+else:
     raise SystemExit(int(os.environ.get("TEST_APPLY_EXIT", "0")))
 '''
 
@@ -237,6 +240,15 @@ class DeploymentTests(unittest.TestCase):
     def test_preserves_ansible_failure_and_cleans_credentials(self):
         result, _ = self.run_deployment(TEST_APPLY_EXIT="2")
         self.assertEqual(result.returncode, 2)
+
+    def test_preflight_failures_cannot_be_mistaken_for_unready_access(self):
+        for setting in ("TEST_SYNTAX_EXIT", "TEST_LIST_EXIT"):
+            for status in (2, 4):
+                with self.subTest(setting=setting, status=status):
+                    result, calls = self.run_deployment(DEPLOY_PLAYBOOK="access", **{setting: str(status)})
+                    self.assertEqual(result.returncode, 1)
+                    self.assertTrue(all("--syntax-check" in call["args"] or "--list-hosts" in call["args"] for call in calls))
+                    self.calls.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

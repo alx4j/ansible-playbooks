@@ -1,75 +1,69 @@
-# Manual deployment from GitHub Actions
+# Bootstrap VPS from GitHub Actions
 
-**Bootstrap dev server** creates development access and configures the server in one manual run. Pushes, pull requests, and merges do not deploy.
+**Bootstrap VPS** handles first setup manually and applies later configuration changes automatically after `main` passes validation. Pull requests run tests without contacting servers.
 
 ## 1. Configure the environment
 
-Use the `development` environment in **Settings → Environments**, creating it if needed. The workflow always uses this environment. Restrict deployment branches to the default branch; the job also skips other branches. Environment features depend on repository visibility and GitHub plan.
+Use the `development` environment in **Settings → Environments**, creating it if needed. Restrict its allowed branches to `main`. Existing environment protection rules also apply to automatic runs.
 
-Save these settings once. The workflow uses the [development inventory](../inventories/development/hosts.yml) to select saved bootstrap credentials for the server entered in the run form.
+Save these settings once:
 
 | Name | GitHub setting | Value |
 | --- | --- | --- |
-| `SUDO_USER` | Variable | Required non-root account name for routine SSH and sudo. Its value is kept outside the repository. |
-| `ANSIBLE_KNOWN_HOSTS` | Variable | Independently verified OpenSSH `known_hosts` entries. |
+| `SUDO_USER` | Variable | Required non-root account name for routine SSH and sudo. Its value stays outside the repository. |
+| `SUDO_PASSWORD` | Secret | That account's sudo password. Bootstrap uses it when creating the account; existing passwords are preserved. |
+| `ANSIBLE_SSH_PRIVATE_KEY` | Secret | Dedicated, unencrypted SSH key for runner → development account. Bootstrap derives and installs its public key. |
+| `ANSIBLE_KNOWN_HOSTS` | Variable | Independently verified OpenSSH host-key entries for every managed server. |
 | `ANSIBLE_SSH_PORT` | Optional variable | Existing SSH port; defaults to `22`. This does not change the server's listening port. |
-| `ANSIBLE_SSH_PRIVATE_KEY` | Secret | Dedicated deployment key for GitHub runner → the configured account on the server. The workflow derives and installs its public key during bootstrap. Use a key without an interactive passphrase. |
-| `SUDO_PASSWORD` | Secret | Password for the account named by `SUDO_USER` to use with sudo. The workflow derives its hash for account creation; routine runs use the same secret for sudo. |
-| `BOOTSTRAP_DEV_ALX4J_COM_PASSWORD` | Secret | Initial SSH and sudo password for `debian` on `dev.alx4j.com`. Needed only when development access must be established. |
 
-The workflow maps the GitHub `SUDO_USER` variable to the controller variable `DEPLOY_SUDO_USER`. Missing or invalid account names stop setup before any connection. GitHub variables are not automatically masked in logs.
+These account and key settings are shared across the inventory. GitHub maps `SUDO_USER` to the controller variable `DEPLOY_SUDO_USER`; variables are not automatically masked in logs. Missing required settings stop the run before any connection.
 
-Choose `SUDO_PASSWORD` for a new account; if the configured account already exists, supply its current sudo password. Bootstrap preserves existing passwords. Updating the secret does not rotate an existing account's password. Use a single-line value of at most 256 UTF-8 bytes.
+Choose `SUDO_PASSWORD` for a new account, or supply its current password when the account already exists. Changing the secret does not rotate existing passwords. Use a single-line value of at most 256 UTF-8 bytes.
 
-For another registered server, add its entry directly under `development.hosts`, set `dev_host_bootstrap_user` and `bootstrap_password_secret`, and create that named secret in the same GitHub environment. Secret names use `BOOTSTRAP_<NAME>_PASSWORD`. The workflow injects only the secret selected for that run. It still configures one server per run; bulk runs and automatic deployment on merge are not enabled.
+The [development inventory](../inventories/development/hosts.yml) contains server names and a shared reference to `SUDO_USER`, with optional addresses, ports, and role settings. Add another server under `development.hosts`; no bootstrap username or per-server password secret is stored there. Existing `BOOTSTRAP_*_PASSWORD` secrets are unused and may be deleted.
 
-`DOPPLER_TOKEN` is reserved for later Doppler setup on the target. This workflow does not read it, fetch bootstrap credentials from Doppler, or install the token on the server yet.
+Obtain each SSH host key through a trusted channel such as the provider console. The entry must match the connection address, including an `ansible_host` override. For a nondefault port, use `[hostname]:port` in `known_hosts`. An unverified `ssh-keyscan` result does not establish trust. The runner must be able to reach each server's SSH port.
 
-Obtain the server's SSH host key through a trusted channel such as the provider console. The entry must match the resolved connection address, including an inventory `ansible_host` override when present. For a nondefault SSH port, use `[hostname]:port` in `known_hosts` and set `ANSIBLE_SSH_PORT`. An unverified `ssh-keyscan` result does not establish trust.
-
-The runner must be able to reach the VPS's SSH port. GitHub-hosted runners do not have a single fixed IP; network access must already be configured. Standard GitHub Actions usage and billing apply.
+`DOPPLER_TOKEN` is not used by this workflow or installed on servers. Standard GitHub Actions usage and billing apply.
 
 ## 2. Establish access
 
-The run form has three connection fields:
+Open **Actions → Bootstrap VPS → Run workflow**, select `main`, and fill in:
 
 | Input | Value |
 | --- | --- |
-| `server_address` | Server IP address, hostname, or inventory name, without a username or port. |
-| `bootstrap_user` | Optional initial administrator override. Blank uses the inventory's administrator, or `root` for an unlisted server. |
-| `bootstrap_password` | Optional initial password override. Blank selects the registered server's password secret. Non-root bootstrap uses the same password for sudo. |
+| `server_address` | Server hostname, IP address, or inventory alias. |
+| `bootstrap_user` | Initial administrator username, such as `debian`. Blank defaults to `root`. |
+| `bootstrap_password` | Initial SSH password; also used for sudo when the initial administrator is not root. |
 
-`bootstrap_password` is an ordinary workflow input, not a GitHub secret or hidden password field. The first step masks it in logs, but it remains in the workflow event data. Disabling password SSH access later does not invalidate the password for sudo, `su`, or console login. Use this input with that visibility understood. Surrounding whitespace is rejected because Ansible's connection-password file reader strips it.
+The initial administrator must already have sudo access. If its SSH and sudo passwords differ, use [local bootstrap](development.md#bootstrap-and-apply). Leaving the password blank requires the deployment key to be authorized for that initial account and noninteractive sudo to work.
 
-For a new VPS with password access:
+`bootstrap_password` is an ordinary workflow input, not a hidden password field or GitHub secret. The first step masks it in logs, but it remains in the workflow event data. Disabling password SSH later does not invalidate it for sudo, `su`, or console login. Surrounding whitespace is rejected because Ansible strips it from connection-password files.
 
-1. Prepare a deployment key pair once and save its private half as `ANSIBLE_SSH_PRIVATE_KEY`. The initial account does not need this key installed. Save `SUDO_USER`, its `SUDO_PASSWORD`, and verified host keys in the `development` environment.
-2. Open **Actions → Bootstrap dev server → Run workflow**. Select the default branch and enter the server address. For `dev.alx4j.com`, leave both initial credential fields blank: the inventory supplies `debian`, and GitHub supplies its saved password. For an unlisted server, enter its initial credentials. A non-root initial account must already have working sudo access with that password, or passwordless sudo.
-3. Click **Run workflow** to perform setup. The workflow first checks development-account key and sudo access. If the account cannot be reached, it uses the initial administrator to create the configured account, grant sudo access, and install the deployment public key.
-4. The same run reconnects as that account, verifies key and sudo access, and configures the server. SSH hardening happens only after that verification, followed by another access check. The default policy disables password SSH authentication for all accounts and disables root SSH entirely.
+The manual run first checks development-account key and sudo access. If that connection is unavailable, it uses the initial administrator to create the configured account, grant sudo, and install the public key. It then reconnects through the development account and applies `site.yml`. Incorrect initial credentials fail the manual run. An existing development account with failing sudo also fails without attempting bootstrap.
 
-An explicit password overrides the saved secret. Changing the administrator to a different account disables use of that server's saved password, so supply an explicit password or use established initial key access. An unlisted server never receives a registered server's secret. Ambiguous inventory addresses fail before credentials are selected.
+Manual runs select one server. Host patterns, shell options, and multiple targets are rejected. All connections enforce the saved host keys. Keep provider-console access available for recovery.
 
-When bootstrap is needed and the selected saved secret is missing, setup stops with an error. For an unlisted server or an administrator override with no password, the deployment key must already be authorized for the initial administrator, and non-root sudo must work without a password. For separate initial SSH and sudo passwords, use [local bootstrap](development.md#bootstrap-and-apply).
+## 3. Apply later changes
 
-On later runs, use the same workflow and server address. Working development-account key and sudo access automatically skips initial account creation, even if old initial credentials were supplied. If the development-account SSH connection succeeds but sudo fails, the run stops without trying the initial administrator. All connections enforce the saved SSH host keys. Keep provider-console access available for recovery.
+Merge configuration changes into `main`. After **Validate playbooks** succeeds for that push, the same **Bootstrap VPS** workflow checks out the validated commit and processes inventory servers one at a time:
 
-## 3. Rerun setup
+- Working development-account SSH and sudo access: apply `site.yml`.
+- Missing account, rejected key, unavailable SSH, or failed sudo/access checks: warn, leave the server unchanged, and continue.
+- Invalid inputs, runner errors, or failed configuration: fail the workflow. A configuration failure is never presented as a skipped server.
 
-Open **Actions → Bootstrap dev server → Run workflow**, select the default branch, and enter the server address. Initial credentials can be left blank when development-account access works; the saved `development` environment supplies the key and sudo password. Clicking **Run workflow** applies the configuration directly. Review the server address and default-branch changes before running; each run records its commit.
+Automatic runs never try initial credentials, derive an account-creation password hash, or run `bootstrap.yml`. A warning means access is unavailable; it does not prove the account is absent. Check access, or run **Bootstrap VPS** manually for first setup.
 
-The generated inventory contains one host, internally named `dev01`, with the configured `sudo_user` and deployment public key. Host patterns, SSH options, and multiple targets are rejected. Every stage must resolve to exactly that host; an empty match fails. Setup runs are serialized: a running deployment is not canceled, but a newer pending run can replace an older pending run.
+The job summary lists every server as updated, skipped, or failed. A run with only skipped servers succeeds with warnings and lists every skip; no server is reported as updated. Failed or canceled validation, PR validation, and validation for an older commit do not start automatic configuration.
+
+You can still rerun one server manually with just its address once development access works. Both paths share a concurrency group, so they cannot change servers simultaneously. Running setup is not canceled; a newer pending run can replace an older pending run.
 
 ## Execution details
 
-The workflow's first step reads any explicit bootstrap password from `GITHUB_EVENT_PATH` and registers its log mask before checkout. It is never interpolated into shell code or a step's environment declaration. The workflow installs pinned dependencies through `scripts/setup` and runs `scripts/check`. A resolution step outputs only the selected secret's name; the deployment step then receives its value through GitHub's secrets context. Inventory resolution runs without deployment credentials in its subprocess environment.
+Both paths install pinned dependencies through `scripts/setup` and run `scripts/check`. The automatic step receives only routine SSH/sudo credentials. Inventory resolution runs without credentials in its subprocess environment; automatic runs preserve resolved host-specific role settings and ports while enforcing the configured development account.
 
-`scripts/github-deploy.py` validates the form fields and required `SUDO_USER` account name, derives the public key with `ssh-keygen`, and builds a temporary inventory. It runs `access.yml` to verify the configured account's login and sudo. An unreachable development-account connection triggers `bootstrap.yml`; task and sudo failures stop the run. Both paths then run `site.yml`, which verifies fresh development access before configuration.
+`scripts/github-deploy.py` creates a temporary inventory for exactly one server at each stage. `scripts/deploy` checks syntax and target selection, enforces host-key checking, and uses separate SSH control directories so earlier connections cannot bypass authentication. Passwords are never passed as command arguments. Credential files use mode `0600` inside a `0700` temporary directory, removed on exit and ordinary cancellation. Initial credentials and the account-creation hash are excluded from routine Ansible subprocesses.
 
-Only initial account creation derives a salted SHA-512 crypt hash from `SUDO_PASSWORD` through OpenSSL stdin and masks the hash. The development account uses `update_password: on_create`, so existing passwords are preserved. Initial SSH/sudo credentials are isolated to the account-creation stage; configuration uses the deployment key and `SUDO_PASSWORD`. Working development access does not require the initial password secret on subsequent runs.
+Manual account creation derives a salted SHA-512 crypt hash from `SUDO_PASSWORD` through OpenSSL stdin. The account uses `update_password: on_create`, preserving existing passwords. Codex/ClickUp login and Moshi pairing remain [interactive onboarding](configuration.md#account-onboarding).
 
-`scripts/deploy` validates key formats, playbook syntax, and host selection; enforces SSH host-key checking; and invokes Ansible without interactive prompts or `--diff`. Each stage has its own SSH control directory so earlier connections cannot bypass credential or host-key checks. Password bootstrap uses Ansible's connection-password file and built-in `ssh_askpass` mechanism; it does not require `sshpass`. Passwords are never placed in command arguments. Credential files use mode `0600`; deployment files live in a `0700` temporary directory removed on exit and ordinary cancellation signals. Sudo authentication is passed through the environment. The initial password, event-file path, and account-creation hash are excluded from routine Ansible subprocesses; the original event file still belongs to the GitHub runner.
-
-Codex/ClickUp login and Moshi pairing remain [interactive onboarding](configuration.md#account-onboarding). Controller-local configuration files must be available on the runner before setting their source paths; leave those settings empty to preserve existing files.
-
-See [verification](development.md#verification) for automated checks and their limits. GitHub documents [manual inputs](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs), [environments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments), and [concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+See [verification](development.md#verification) for test coverage and limits. GitHub documents [workflow completion triggers](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run), [manual inputs](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs), and [concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).

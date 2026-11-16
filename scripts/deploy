@@ -69,8 +69,9 @@ unset DEPLOY_BOOTSTRAP_PASSWORD DEPLOY_SSH_PRIVATE_KEY
 command=(ansible-playbook -i "$deployment_dir/inventory.yml" "$DEPLOY_PLAYBOOK.yml"
   --limit "$DEPLOY_HOST" "${authentication[@]}" --ssh-common-args "$ssh_options")
 
-"${command[@]}" --syntax-check
-"${command[@]}" --list-hosts > "$deployment_dir/hosts.txt"
+# Keep preflight failures distinct from access failures in automatic runs.
+"${command[@]}" --syntax-check || fail 'Playbook syntax validation failed.'
+"${command[@]}" --list-hosts > "$deployment_dir/hosts.txt" || fail 'Could not resolve playbook targets.'
 awk -v target="$DEPLOY_HOST" '
   /^[[:space:]]+hosts \(/ {
     if ($0 ~ /hosts \(1\):[[:space:]]*$/) valid++; else invalid++

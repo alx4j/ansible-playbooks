@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -122,110 +123,165 @@ class GitHubDeploymentTests(unittest.TestCase):
                 DEPLOY.prepare_environment(event, self.env)
 
 
-class InventoryBootstrapTests(unittest.TestCase):
+class InventoryTargetTests(unittest.TestCase):
+    def test_registered_alias_resolves_address_and_unlisted_server_is_allowed(self):
+        inventory = {
+            "development": {"hosts": ["first.example.com"]},
+            "_meta": {"hostvars": {"first.example.com": {"ansible_host": "192.0.2.20"}}},
+        }
+        with patch.object(DEPLOY, "load_inventory", return_value=inventory):
+            for address, expected in (("first.example.com", "192.0.2.20"),
+                                      ("192.0.2.20", "192.0.2.20"),
+                                      ("unlisted.example.com", "unlisted.example.com")):
+                self.assertEqual(DEPLOY.resolve_target({"inputs": {"server_address": address}}), expected)
+            inventory["development"]["hosts"].append("second.example.com")
+            inventory["_meta"]["hostvars"]["second.example.com"] = {"ansible_host": "192.0.2.20"}
+            with self.assertRaisesRegex(ValueError, "multiple inventory entries"):
+                DEPLOY.resolve_target({"inputs": {"server_address": "192.0.2.20"}})
+
+    def test_manual_setup_uses_only_credentials_from_the_form(self):
+        event = {"inputs": {"server_address": "first.example.com", "bootstrap_user": "debian",
+                            "bootstrap_password": "manual password placeholder"}}
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "event.json"
+            path.write_text(json.dumps(event))
+            with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(path),
+                                       "DEPLOY_BOOTSTRAP_SECRET": "unused stale password"}, clear=True), \
+                    patch.object(DEPLOY, "resolve_target", return_value="192.0.2.20"), \
+                    patch.object(DEPLOY, "prepare_environment", return_value={"PATH": "/usr/bin"}) as prepare, \
+                    patch.object(DEPLOY, "configure_server", return_value=0) as configure:
+                self.assertEqual(DEPLOY.main(), 0)
+                configure.assert_called_once_with({"PATH": "/usr/bin"}, "manual password placeholder")
+                inputs = prepare.call_args.args[0]["inputs"]
+                self.assertEqual(inputs["server_address"], "192.0.2.20")
+                self.assertEqual(inputs["bootstrap_user"], "debian")
+
+
+class InventoryUpdateTests(unittest.TestCase):
     def setUp(self):
-        self.event = {"inputs": {"server_address": "first.example.com"}}
         self.inventory = {
             "development": {"hosts": ["first.example.com", "second.example.com"]},
             "_meta": {"hostvars": {
-                "first.example.com": {
-                    "ansible_host": "192.0.2.20", "dev_host_bootstrap_user": "debian",
-                    "bootstrap_password_secret": "BOOTSTRAP_FIRST_EXAMPLE_COM_PASSWORD",
-                },
-                "second.example.com": {
-                    "ansible_host": "192.0.2.21", "dev_host_bootstrap_user": "ubuntu",
-                    "bootstrap_password_secret": "BOOTSTRAP_SECOND_EXAMPLE_COM_PASSWORD",
-                },
+                "first.example.com": {"ansible_host": "192.0.2.20", "ansible_port": 2222,
+                                      "dev_host_bootstrap_user": "debian",
+                                      "bootstrap_password_secret": "BOOTSTRAP_FIRST_EXAMPLE_COM_PASSWORD",
+                                      "dev_host_timezone": "Etc/UTC"},
+                "second.example.com": {"ansible_host": "192.0.2.21"},
             }},
         }
-        self.addCleanup(patch.stopall)
-        patch.object(DEPLOY, "load_inventory", return_value=self.inventory).start()
-        patch.object(DEPLOY, "public_key", return_value="ssh-ed25519 public-key-placeholder").start()
         self.env = {
             "DEPLOY_SUDO_USER": "deploymenttest", "SUDO_PASSWORD": "sudo password placeholder",
             "DEPLOY_SSH_PRIVATE_KEY": "private key placeholder", "DEPLOY_KNOWN_HOSTS": "host key placeholder",
-            "DEPLOY_BOOTSTRAP_SECRET": "saved administrator password placeholder",
+            "DEPLOY_BOOTSTRAP_SECRET": "invalid initial password placeholder",
+            "DEPLOY_BOOTSTRAP_PASSWORD": "stale initial password placeholder",
+            "SUDO_PASSWORD_HASH": "stale hash placeholder",
         }
+        self.output = io.StringIO()
+        self.errors = io.StringIO()
+        self.addCleanup(patch.stopall)
+        patch.object(DEPLOY, "load_inventory", return_value=self.inventory).start()
+        patch.object(DEPLOY, "public_key", return_value="ssh-ed25519 public-key-placeholder").start()
+        self.hash = patch.object(DEPLOY, "password_hash").start()
+        self.bootstrap = patch.object(DEPLOY, "configure_server", side_effect=AssertionError("Manual setup called")).start()
+        patch("sys.stdout", self.output).start()
+        patch("sys.stderr", self.errors).start()
 
-    def run_main(self, resolve_only=False):
+    def update(self, statuses):
+        results = [subprocess.CompletedProcess([], status, "probe diagnostics\n", "") for status in statuses]
+        with patch.object(DEPLOY, "run_playbook", side_effect=results) as run:
+            status = DEPLOY.update_inventory(self.env)
+        self.hash.assert_not_called()
+        self.bootstrap.assert_not_called()
+        return status, [(call.args[0]["DEPLOY_HOST"], call.args[1]) for call in run.call_args_list], run.call_args_list
+
+    def test_unready_server_is_skipped_and_next_server_is_updated(self):
+        for failure in (2, 4):
+            with self.subTest(access_status=failure):
+                status, calls, _ = self.update([failure, 0, 0])
+                self.assertEqual(status, 0)
+                self.assertEqual(calls, [("first.example.com", "access"), ("second.example.com", "access"),
+                                         ("second.example.com", "site")])
+        self.assertIn("::warning::Skipped first.example.com", self.output.getvalue())
+        self.assertIn("run Bootstrap VPS manually", self.output.getvalue())
+
+    def test_ready_servers_use_only_development_access_and_preserve_host_settings(self):
+        status, calls, details = self.update([0, 0, 0, 0])
+        self.assertEqual(status, 0)
+        self.assertEqual(calls, [(name, stage) for name in self.inventory["development"]["hosts"]
+                                for stage in ("access", "site")])
+        for call in details:
+            env = call.args[0]
+            for name in ("DEPLOY_BOOTSTRAP_SECRET", "DEPLOY_BOOTSTRAP_PASSWORD", "SUDO_PASSWORD_HASH"):
+                self.assertNotIn(name, env)
+                self.assertNotIn(self.env[name], env["DEPLOY_INVENTORY"])
+            host = json.loads(env["DEPLOY_INVENTORY"])["all"]["children"]["development"]["hosts"][env["DEPLOY_HOST"]]
+            self.assertEqual(host["ansible_user"], "deploymenttest")
+            self.assertNotIn("dev_host_bootstrap_user", host)
+            self.assertNotIn("bootstrap_password_secret", host)
+            if env["DEPLOY_HOST"] == "first.example.com":
+                self.assertEqual(host["ansible_port"], 2222)
+                self.assertEqual(host["dev_host_timezone"], "Etc/UTC")
+
+    def test_configuration_failure_fails_the_run_and_continues_to_next_server(self):
+        status, calls, _ = self.update([0, 2, 0, 0])
+        self.assertEqual(status, 1)
+        self.assertEqual(calls[-1], ("second.example.com", "site"))
+        self.assertIn("Failed: configuration error", self.output.getvalue())
+
+    def test_runner_and_validation_errors_are_failures_not_readiness_warnings(self):
+        for error in (1, 99):
+            with self.subTest(status=error):
+                status, calls, _ = self.update([error, 0, 0])
+                self.assertEqual(status, 1)
+                self.assertNotIn(("first.example.com", "site"), calls)
+        self.assertNotIn("::warning::", self.output.getvalue())
+
+    def test_all_skipped_servers_are_visible_in_job_summary_without_secrets(self):
         with tempfile.TemporaryDirectory() as temporary:
-            event = Path(temporary) / "event.json"
-            event.write_text(json.dumps(self.event))
-            output = Path(temporary) / "output"
-            with patch.dict(os.environ, {**self.env, "GITHUB_EVENT_PATH": str(event), "GITHUB_OUTPUT": str(output)}, clear=True), \
-                    patch.object(DEPLOY, "configure_server", return_value=0) as configure:
-                result = DEPLOY.main(resolve_only=resolve_only)
-            return result, configure, output.read_text() if output.exists() else ""
+            summary = Path(temporary) / "summary.md"
+            self.env["GITHUB_STEP_SUMMARY"] = str(summary)
+            status, calls, _ = self.update([4, 2])
+            report = summary.read_text()
+        self.assertEqual(status, 0)
+        self.assertEqual(len(calls), 2)
+        for name in self.inventory["development"]["hosts"]:
+            self.assertIn(f"| {name} | Skipped:", report)
+        self.assertNotIn("Updated", report)
+        for name in ("SUDO_PASSWORD", "DEPLOY_BOOTSTRAP_SECRET", "DEPLOY_SSH_PRIVATE_KEY"):
+            self.assertNotIn(self.env[name], report + self.output.getvalue() + self.errors.getvalue())
 
-    def test_selects_each_servers_own_administrator_and_secret(self):
-        for address, resolved_address, username, secret in (
-            ("first.example.com", "192.0.2.20", "debian", "BOOTSTRAP_FIRST_EXAMPLE_COM_PASSWORD"),
-            ("192.0.2.20", "192.0.2.20", "debian", "BOOTSTRAP_FIRST_EXAMPLE_COM_PASSWORD"),
-            ("second.example.com", "192.0.2.21", "ubuntu", "BOOTSTRAP_SECOND_EXAMPLE_COM_PASSWORD"),
-        ):
-            with self.subTest(address=address):
-                self.event["inputs"]["server_address"] = address
-                self.assertEqual(DEPLOY.resolve_target(self.event), {
-                    "server_address": resolved_address, "bootstrap_user": username, "bootstrap_password_secret": secret,
-                })
+    def test_all_targets_are_validated_before_any_connection(self):
+        variables = self.inventory["_meta"]["hostvars"]["second.example.com"]
+        for setting, value in (("ansible_host", "--unsafe"), ("ansible_port", 0), ("ansible_port", 65536)):
+            with self.subTest(setting=setting, value=value):
+                previous = variables.copy()
+                variables[setting] = value
+                with patch.object(DEPLOY, "run_playbook") as run, self.assertRaises(ValueError):
+                    DEPLOY.update_inventory(self.env)
+                run.assert_not_called()
+                variables.clear()
+                variables.update(previous)
 
-    def test_unknown_host_does_not_receive_a_registered_password(self):
-        self.event["inputs"]["server_address"] = "unregistered.example.com"
-        self.assertEqual(DEPLOY.resolve_target(self.event), {
-            "server_address": "unregistered.example.com", "bootstrap_user": "root", "bootstrap_password_secret": "",
-        })
-        result, configure, _ = self.run_main()
-        self.assertEqual(result, 0)
-        self.assertEqual(configure.call_args.args[1], "")
-        self.assertFalse(configure.call_args.kwargs["require_bootstrap_password"])
-        self.assertNotIn("DEPLOY_BOOTSTRAP_SECRET", configure.call_args.args[0])
+    def test_missing_credentials_and_empty_inventory_fail_before_any_connection(self):
+        for name in ("SUDO_PASSWORD", "DEPLOY_SUDO_USER", "DEPLOY_KNOWN_HOSTS", "DEPLOY_SSH_PRIVATE_KEY"):
+            with self.subTest(name=name), patch.object(DEPLOY, "run_playbook") as run, self.assertRaises(ValueError):
+                DEPLOY.update_inventory({**self.env, name: ""})
+            run.assert_not_called()
+        self.inventory["development"]["hosts"] = []
+        with self.assertRaisesRegex(ValueError, "contains no servers"):
+            DEPLOY.update_inventory(self.env)
 
-    def test_explicit_password_takes_precedence_over_the_saved_secret(self):
-        self.event["inputs"]["bootstrap_password"] = "manual password placeholder"
-        self.assertEqual(DEPLOY.resolve_target(self.event)["bootstrap_password_secret"], "")
-        result, configure, _ = self.run_main()
-        self.assertEqual(result, 0)
-        self.assertEqual(configure.call_args.args[1], "manual password placeholder")
+    def test_child_groups_are_included_once_and_unrelated_hosts_are_excluded(self):
+        self.inventory["development"] = {"hosts": ["first.example.com"], "children": ["region"]}
+        self.inventory["region"] = {"hosts": ["first.example.com", "second.example.com"]}
+        self.inventory["unrelated"] = {"hosts": ["excluded.example.com"]}
+        self.assertEqual(DEPLOY.development_hosts(self.inventory), ["first.example.com", "second.example.com"])
 
-    def test_saved_password_cannot_be_used_for_a_different_administrator(self):
-        self.event["inputs"]["bootstrap_user"] = "otheradmin"
-        self.assertEqual(DEPLOY.resolve_target(self.event), {
-            "server_address": "192.0.2.20", "bootstrap_user": "otheradmin", "bootstrap_password_secret": "",
-        })
-
-    def test_explicit_matching_administrator_can_use_the_saved_password(self):
-        self.event["inputs"]["bootstrap_user"] = "debian"
-        self.assertEqual(DEPLOY.resolve_target(self.event)["bootstrap_password_secret"], "BOOTSTRAP_FIRST_EXAMPLE_COM_PASSWORD")
-
-    def test_ambiguous_address_fails_before_selecting_credentials(self):
-        self.inventory["_meta"]["hostvars"]["second.example.com"]["ansible_host"] = "192.0.2.20"
-        self.event["inputs"]["server_address"] = "192.0.2.20"
-        with self.assertRaisesRegex(ValueError, "multiple inventory entries"):
-            DEPLOY.resolve_target(self.event)
-
-    def test_rejects_unrelated_or_malformed_secret_references(self):
-        for name in ("SUDO_PASSWORD", "GITHUB_TOKEN", "BOOTSTRAP_BAD\n_PASSWORD", None, []):
-            with self.subTest(name=name), self.assertRaisesRegex(ValueError, "Inventory bootstrap secret names"):
-                self.inventory["_meta"]["hostvars"]["first.example.com"]["bootstrap_password_secret"] = name
-                DEPLOY.resolve_target(self.event)
-
-    def test_main_uses_inventory_user_and_keeps_saved_password_out_of_ansible_environment(self):
-        result, configure, _ = self.run_main()
-        self.assertEqual(result, 0)
-        self.assertEqual(configure.call_args.args[1], self.env["DEPLOY_BOOTSTRAP_SECRET"])
-        self.assertTrue(configure.call_args.kwargs["require_bootstrap_password"])
-        env = configure.call_args.args[0]
-        self.assertNotIn("DEPLOY_BOOTSTRAP_SECRET", env)
-        self.assertNotIn(self.env["DEPLOY_BOOTSTRAP_SECRET"], env["DEPLOY_INVENTORY"])
-        host = json.loads(env["DEPLOY_INVENTORY"])["all"]["children"]["development"]["hosts"]["dev01"]
-        self.assertEqual(host["dev_host_bootstrap_user"], "debian")
-        self.assertEqual(host["ansible_host"], "192.0.2.20")
-
-    def test_resolution_outputs_only_the_secret_name_and_does_not_deploy(self):
-        result, configure, output = self.run_main(resolve_only=True)
-        self.assertEqual(result, 0)
-        self.assertEqual(output, "bootstrap_password_secret=BOOTSTRAP_FIRST_EXAMPLE_COM_PASSWORD\n")
-        configure.assert_not_called()
+    def test_automatic_entry_point_does_not_resolve_manual_inputs_or_initial_secrets(self):
+        with patch.dict(os.environ, self.env, clear=True), \
+                patch.object(DEPLOY, "resolve_target", side_effect=AssertionError("Manual credentials selected")), \
+                patch.object(DEPLOY, "run_playbook", return_value=subprocess.CompletedProcess([], 4, "", "")):
+            self.assertEqual(DEPLOY.main(update_only=True), 0)
 
 
 class SetupSequenceTests(unittest.TestCase):
@@ -266,17 +322,10 @@ class SetupSequenceTests(unittest.TestCase):
         self.assertEqual([call.args[1] for call in calls], ["access", "site"])
         self.hash.assert_not_called()
 
-    def test_existing_access_does_not_require_the_saved_initial_password(self):
-        status, calls = self.configure([0, 0], initial_password="", require_bootstrap_password=True)
+    def test_existing_access_does_not_require_an_initial_password(self):
+        status, calls = self.configure([0, 0], initial_password="")
         self.assertEqual(status, 0)
         self.assertEqual([call.args[1] for call in calls], ["access", "site"])
-        self.hash.assert_not_called()
-
-    def test_missing_saved_password_stops_after_probe_without_bootstrapping(self):
-        with patch.object(DEPLOY, "run_playbook", return_value=subprocess.CompletedProcess([], 4, "", "")) as run:
-            with self.assertRaisesRegex(ValueError, "bootstrap password secret"):
-                DEPLOY.configure_server(self.env, "", require_bootstrap_password=True)
-        self.assertEqual(run.call_count, 1)
         self.hash.assert_not_called()
 
     def test_sudo_and_validation_failures_stop_without_bootstrap(self):
@@ -338,11 +387,11 @@ class CredentialPreparationTests(unittest.TestCase):
             event = Path(temporary) / "event.json"
             event.write_text('{"inputs": {}}')
             with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event)}, clear=True), \
-                    patch.object(DEPLOY, "resolve_target", return_value={"server_address": "192.0.2.10", "bootstrap_user": "root", "bootstrap_password_secret": ""}), \
+                    patch.object(DEPLOY, "resolve_target", return_value="192.0.2.10"), \
                     patch.object(DEPLOY, "prepare_environment", return_value={"PATH": "/usr/bin"}), \
                     patch.object(DEPLOY, "configure_server", return_value=4) as configure:
                 self.assertEqual(DEPLOY.main(), 4)
-                configure.assert_called_once_with({"PATH": "/usr/bin"}, "", require_bootstrap_password=False)
+                configure.assert_called_once_with({"PATH": "/usr/bin"}, "")
 
     def test_removed_maintenance_argument_cannot_trigger_server_setup(self):
         result = subprocess.run(
@@ -354,6 +403,47 @@ class CredentialPreparationTests(unittest.TestCase):
 
 
 class WorkflowMaskingTests(unittest.TestCase):
+    def test_only_successful_main_push_validation_can_start_an_automatic_run(self):
+        workflow = yaml.safe_load((ROOT / ".github/workflows/deploy.yml").read_text())
+        triggers = workflow.get("on", workflow.get(True))
+        self.assertEqual(triggers["workflow_run"], {
+            "workflows": ["Validate playbooks"], "types": ["completed"], "branches": ["main"],
+        })
+        job = workflow["jobs"]["deploy"]
+        expression = " ".join(job["if"].split()).replace("&&", "and").replace("||", "or")
+        base = {"event_name": "workflow_run", "ref": "refs/heads/main", "repository": "owner/repo", "sha": "current-main",
+                "event": {"repository": {"default_branch": "main"}, "workflow_run": {
+                    "event": "push", "head_branch": "main", "head_repository": {"full_name": "owner/repo"},
+                    "conclusion": "success", "head_sha": "current-main",
+                }}}
+        for changed, expected in (({}, True), ({"event": "pull_request"}, False),
+                                  ({"head_branch": "other"}, False), ({"conclusion": "failure"}, False),
+                                  ({"conclusion": "cancelled"}, False), ({"head_sha": "old-main"}, False),
+                                  ({"head_repository": {"full_name": "fork/repo"}}, False)):
+            context = json.loads(json.dumps(base))
+            context["event"]["workflow_run"].update(changed)
+            github = json.loads(json.dumps(context), object_hook=lambda value: SimpleNamespace(**value))
+            with self.subTest(event=changed):
+                self.assertEqual(eval(expression, {"__builtins__": {}}, {"github": github}), expected)
+        for branch, expected in (("main", True), ("feature", False)):
+            context = {**base, "event_name": "workflow_dispatch", "ref": f"refs/heads/{branch}"}
+            github = json.loads(json.dumps(context), object_hook=lambda value: SimpleNamespace(**value))
+            self.assertEqual(eval(expression, {"__builtins__": {}, "format": lambda value, arg: value.format(arg)},
+                                  {"github": github}), expected)
+        checkout = next(step for step in job["steps"] if step.get("uses", "").startswith("actions/checkout@"))
+        self.assertEqual(checkout["with"]["ref"], "${{ github.event.workflow_run.head_sha || github.sha }}")
+
+    def test_automatic_run_has_no_initial_credential_step_or_secret(self):
+        workflow = yaml.safe_load((ROOT / ".github/workflows/deploy.yml").read_text())
+        steps = workflow["jobs"]["deploy"]["steps"]
+        automatic = next(step for step in steps if "--update-inventory" in step.get("run", ""))
+        self.assertEqual(automatic["if"], "github.event_name == 'workflow_run'")
+        self.assertEqual(set(automatic["env"]), {
+            "DEPLOY_KNOWN_HOSTS", "DEPLOY_SSH_PORT", "DEPLOY_SSH_PRIVATE_KEY", "DEPLOY_SUDO_USER", "SUDO_PASSWORD",
+        })
+        self.assertNotIn("BOOTSTRAP_", json.dumps(steps))
+        self.assertEqual(steps[-1]["if"], "github.event_name == 'workflow_dispatch'")
+
     def test_deployment_uses_the_configured_environment_variable_and_secret(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/deploy.yml").read_text())
         job = workflow["jobs"]["deploy"]
@@ -361,7 +451,7 @@ class WorkflowMaskingTests(unittest.TestCase):
         env = job["steps"][-1]["env"]
         self.assertEqual(env["DEPLOY_SUDO_USER"], "${{ vars.SUDO_USER }}")
         self.assertEqual(env["SUDO_PASSWORD"], "${{ secrets.SUDO_PASSWORD }}")
-        self.assertEqual(env["DEPLOY_BOOTSTRAP_SECRET"], "${{ secrets[steps.target.outputs.bootstrap_password_secret] }}")
+        self.assertNotIn("DEPLOY_BOOTSTRAP_SECRET", env)
 
     def test_first_step_masks_event_input_without_shell_interpolation(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/deploy.yml").read_text())

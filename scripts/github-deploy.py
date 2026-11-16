@@ -1,4 +1,4 @@
-"""Run server setup with an automatic handoff to development-user access."""
+"""Bootstrap one server manually or update inventory servers with existing access."""
 
 import ipaddress
 import json
@@ -97,24 +97,27 @@ def resolve_target(event):
     inventory = load_inventory()
     hostvars = inventory.get("_meta", {}).get("hostvars", {})
     matches = [
-        hostvars.get(name, {}) for name in inventory["development"].get("hosts", [])
+        hostvars.get(name, {}) for name in development_hosts(inventory)
         if address == name or address == hostvars.get(name, {}).get("ansible_host")
     ]
     if len(matches) > 1:
         raise ValueError("The server address matches multiple inventory entries; use a unique hostname.")
     saved = matches[0] if matches else {}
     address = server_address({"server_address": saved.get("ansible_host", address)})
-    saved_user = saved.get("dev_host_bootstrap_user", "root")
-    username = inputs.get("bootstrap_user") or saved_user
-    if not isinstance(username, str) or not re.fullmatch(r"[a-z_][a-z0-9_-]*", username):
-        raise ValueError("Provide a valid initial administrator username.")
-    secret = saved.get("bootstrap_password_secret", "")
-    if not isinstance(secret, str) or (secret and not re.fullmatch(r"BOOTSTRAP_[A-Z0-9_]+_PASSWORD", secret)):
-        raise ValueError("Inventory bootstrap secret names must use BOOTSTRAP_<NAME>_PASSWORD.")
-    # A saved password belongs only to its registered server and administrator.
-    if password or username != saved_user:
-        secret = ""
-    return {"server_address": address, "bootstrap_user": username, "bootstrap_password_secret": secret}
+    return address
+
+
+def development_hosts(inventory):
+    hosts = set()
+    visited = set()
+    pending = ["development"]
+    while pending:
+        group = pending.pop()
+        if group not in visited:
+            visited.add(group)
+            hosts.update(inventory[group].get("hosts", []))
+            pending.extend(inventory[group].get("children", []))
+    return sorted(hosts)
 
 
 def prepare_environment(event, environment):
@@ -172,7 +175,7 @@ def run_playbook(env, playbook, capture_output=False):
     )
 
 
-def configure_server(env, initial_password, *, require_bootstrap_password=False):
+def configure_server(env, initial_password):
     print("Checking development-user SSH and sudo access.", flush=True)
     access = run_playbook(env, "access", capture_output=True)
     if access.returncode:
@@ -181,8 +184,6 @@ def configure_server(env, initial_password, *, require_bootstrap_password=False)
         if access.returncode != 4:
             print(access.stdout + access.stderr, file=sys.stderr)
             return access.returncode
-        if require_bootstrap_password and not initial_password:
-            raise ValueError("Set the bootstrap password secret referenced by this server's inventory entry.")
         validate_bootstrap_password(initial_password)
 
         print("Establishing development access through the initial administrator.", flush=True)
@@ -201,24 +202,78 @@ def configure_server(env, initial_password, *, require_bootstrap_password=False)
     return run_playbook(env, "site").returncode
 
 
-def main(*, resolve_only=False):
+def prepare_inventory_environment(name, variables, environment):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name):
+        raise ValueError("Inventory entries must use exact hostnames, without patterns or SSH options.")
+    inputs = {"server_address": variables.get("ansible_host", name)}
+    env = prepare_environment({"inputs": inputs}, {
+        **environment,
+        "DEPLOY_SSH_PORT": str(variables.get("ansible_port", environment.get("DEPLOY_SSH_PORT") or "22")),
+    })
+    configured = json.loads(env["DEPLOY_INVENTORY"])["all"]["children"]["development"]["hosts"]["dev01"]
+    host = {**variables, **configured,
+            "ansible_user": configured["sudo_user"], "dev_host_user": configured["sudo_user"]}
+    host.pop("dev_host_bootstrap_user", None)
+    host.pop("bootstrap_password_secret", None)
+    env["DEPLOY_HOST"] = name
+    env["DEPLOY_INVENTORY"] = json.dumps({"all": {"children": {"development": {"hosts": {name: host}}}}})
+    return env
+
+
+def update_inventory(environment):
+    inventory = load_inventory()
+    names = development_hosts(inventory)
+    if not names:
+        raise ValueError("The development inventory contains no servers.")
+    hostvars = inventory.get("_meta", {}).get("hostvars", {})
+    # Validate all targets and required settings before changing any server.
+    targets = [(name, prepare_inventory_environment(name, hostvars.get(name, {}), environment)) for name in names]
+    results = []
+    for name, env in targets:
+        print(f"Checking SSH and sudo access for {name}.", flush=True)
+        access = run_playbook(env, "access", capture_output=True)
+        if access.returncode:
+            print(access.stdout + access.stderr, file=sys.stderr)
+            # These are failed access tasks or unreachable hosts, respectively.
+            # Syntax, inventory, and runner errors remain failures.
+            if access.returncode in (2, 4):
+                message = (f"Skipped {name}: development-account SSH/sudo access is unavailable. "
+                           "Check access, or run Bootstrap VPS manually for first setup. Bootstrap credentials were not tried.")
+                print(f"::warning::{message}", flush=True)
+                results.append((name, "Skipped: SSH/sudo access unavailable"))
+            else:
+                print(f"::error::Access check could not run for {name} (exit {access.returncode}).", flush=True)
+                results.append((name, "Failed: access check error"))
+            continue
+
+        print(f"Configuring {name} through existing development access.", flush=True)
+        result = run_playbook(env, "site")
+        if result.returncode:
+            print(f"::error::Configuration failed for {name} (exit {result.returncode}).", flush=True)
+            results.append((name, "Failed: configuration error"))
+        else:
+            results.append((name, "Updated"))
+
+    summary = "### Inventory results\n\n| Server | Result |\n| --- | --- |\n"
+    summary += "".join(f"| {name} | {result} |\n" for name, result in results)
+    summary += "\nSkipped servers were left unchanged. First setup must be run manually.\n"
+    print(summary, flush=True)
+    if environment.get("GITHUB_STEP_SUMMARY"):
+        with open(environment["GITHUB_STEP_SUMMARY"], "a") as report:
+            report.write(summary)
+    return int(any(result.startswith("Failed:") for _, result in results))
+
+
+def main(*, update_only=False):
     try:
+        if update_only:
+            return update_inventory(dict(os.environ))
         with open(os.environ["GITHUB_EVENT_PATH"]) as event_file:
             event = json.load(event_file)
-        target = resolve_target(event)
-        if resolve_only:
-            with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-                output.write("bootstrap_password_secret=" + target["bootstrap_password_secret"] + "\n")
-            return 0
-        inputs = {**event["inputs"], "server_address": target["server_address"], "bootstrap_user": target["bootstrap_user"]}
+        inputs = {**workflow_inputs(event), "server_address": resolve_target(event)}
         initial_password = inputs.get("bootstrap_password", "")
-        if target["bootstrap_password_secret"]:
-            initial_password = os.environ.get("DEPLOY_BOOTSTRAP_SECRET", "")
         env = prepare_environment({"inputs": inputs}, dict(os.environ))
-        return configure_server(
-            env, initial_password,
-            require_bootstrap_password=bool(target["bootstrap_password_secret"]),
-        )
+        return configure_server(env, initial_password)
     except (OSError, KeyError, json.JSONDecodeError, subprocess.TimeoutExpired):
         print("Could not prepare deployment inputs or run the deployment tools.", file=sys.stderr)
         return 1
@@ -228,6 +283,6 @@ def main(*, resolve_only=False):
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] not in ([], ["--resolve-target"]):
+    if sys.argv[1:] not in ([], ["--update-inventory"]):
         raise SystemExit("Unsupported workflow runner argument.")
-    raise SystemExit(main(resolve_only=bool(sys.argv[1:])))
+    raise SystemExit(main(update_only=bool(sys.argv[1:])))
