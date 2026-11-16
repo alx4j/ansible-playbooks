@@ -19,6 +19,8 @@ Keep private connection details in the local inventory or GitHub settings. Keep 
 
 ## Sudo authentication
 
+The initial root SSH password (`ANSIBLE_BOOTSTRAP_PASSWORD` in GitHub) is only for connecting before `dev` exists. It does not set the development account's password or authorize sudo for that account.
+
 The default is password-based sudo. For a new account, inject `DEV_PASSWORD_HASH` containing a SHA-512 crypt or yescrypt hash. Bootstrap preserves existing passwords through `update_password: on_create`. Subsequent runs need the corresponding sudo password through GitHub's `ANSIBLE_BECOME_PASSWORD` secret or the local `--ask-become-pass` prompt.
 
 To choose passwordless sudo explicitly, set `dev_host_passwordless_sudo: true`. This installs a validated, project-owned sudoers file. Do not switch it back to `false` until the account has another working sudo authentication method.

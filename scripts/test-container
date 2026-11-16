@@ -7,6 +7,7 @@ image="localhost/ansible-playbooks-test:local"
 "$engine" run --rm \
   -v "$PWD/roles:/work/roles:ro" \
   -v "$PWD/tests:/work/tests:ro" \
+  -v "$PWD/scripts/deploy:/work/scripts/deploy:ro" \
   -v "$PWD/ansible.cfg:/work/ansible.cfg:ro" \
   -e ANSIBLE_COLLECTIONS_PATH=/opt/collections \
   -e ANSIBLE_LOCAL_TEMP=/tmp/ansible-local \
@@ -24,4 +25,5 @@ image="localhost/ansible-playbooks-test:local"
     python3 -c '\''import re; from pathlib import Path; s=Path("/tmp/second-run.log").read_text(); assert re.search(r"localhost\s+:.*changed=0\s+unreachable=0\s+failed=0", s), "Second run did not converge"'\''
     python3 -c '\''import grp; from pathlib import Path; assert "ansibletest" in grp.getgrnam("unrelated").gr_mem; assert Path("/tmp/unrelated-key.pub").read_text().strip() in Path("/home/ansibletest/.ssh/authorized_keys").read_text()'\''
     python3 tests/container-negative.py
+    python3 tests/bootstrap-ssh.py
   '

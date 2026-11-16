@@ -8,7 +8,7 @@ The managed host needs Debian/Ubuntu, Python 3, OpenSSH, APT, and systemd. The c
 
 1. Merge the workflow into the default branch.
 2. Follow [deployment setup](docs/github-deployment.md#1-configure-the-environment) to configure a GitHub environment, inventory, SSH key, and trusted host keys.
-3. For a new host, [bootstrap the development account](docs/github-deployment.md#2-establish-access). Skip bootstrap if `dev` already has working SSH and sudo access.
+3. For a new host, [bootstrap the development account](docs/github-deployment.md#2-establish-access) with the initial root password in `ANSIBLE_BOOTSTRAP_PASSWORD`. Skip bootstrap if `dev` already has working SSH and sudo access.
 4. Run **Actions → Deploy Ansible manually → Run workflow**, selecting the default branch, environment, exact host alias, `site`, and `check`.
 5. Review the result, then run again with `apply`. Check mode connects to the host and is a partial simulation; see [its limitations](docs/github-deployment.md#3-check-review-and-apply).
 

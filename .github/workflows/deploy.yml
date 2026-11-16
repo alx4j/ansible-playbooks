@@ -65,6 +65,7 @@ jobs:
           DEPLOY_MODE: ${{ inputs.mode }}
           DEPLOY_INVENTORY: ${{ vars.ANSIBLE_INVENTORY }}
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
+          DEPLOY_BOOTSTRAP_PASSWORD: ${{ inputs.playbook == 'bootstrap' && secrets.ANSIBLE_BOOTSTRAP_PASSWORD || '' }}
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
           ANSIBLE_BECOME_PASS: ${{ secrets.ANSIBLE_BECOME_PASSWORD }}
           DEV_PASSWORD_HASH: ${{ secrets.DEV_PASSWORD_HASH }}

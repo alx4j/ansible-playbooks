@@ -14,13 +14,18 @@ args = sys.argv[1:]
 if pathlib.Path(sys.argv[0]).name == "ssh-keygen":
     raise SystemExit(int(os.environ.get("TEST_KEY_EXIT", "0")))
 inventory = pathlib.Path(args[args.index("-i") + 1])
-key = pathlib.Path(args[args.index("--private-key") + 1])
+key = pathlib.Path(args[args.index("--private-key") + 1]) if "--private-key" in args else None
+password = pathlib.Path(args[args.index("--connection-password-file") + 1]) if "--connection-password-file" in args else None
 result = {
     "args": args,
     "inventory_private": inventory.stat().st_mode & 0o777 == 0o600,
-    "key_private": key.stat().st_mode & 0o777 == 0o600,
+    "key_private": key is not None and key.stat().st_mode & 0o777 == 0o600,
+    "password_private": password is not None and password.stat().st_mode & 0o777 == 0o600,
+    "password_matches": password is not None and password.read_text() == "test bootstrap password placeholder",
+    "password_mechanism": os.environ.get("ANSIBLE_SSH_PASSWORD_MECHANISM"),
     "directory_private": inventory.parent.stat().st_mode & 0o777 == 0o700,
     "raw_key_removed": "DEPLOY_SSH_PRIVATE_KEY" not in os.environ,
+    "raw_password_removed": "DEPLOY_BOOTSTRAP_PASSWORD" not in os.environ,
     "has_bootstrap_hash": bool(os.environ.get("DEV_PASSWORD_HASH")),
     "has_become_password": bool(os.environ.get("ANSIBLE_BECOME_PASS")),
     "host_key_checking": os.environ.get("ANSIBLE_HOST_KEY_CHECKING"),
@@ -69,9 +74,9 @@ class DeploymentTests(unittest.TestCase):
             text=True, capture_output=True, check=False,
         )
         self.assertEqual(list(self.runtime.iterdir()), [], "Credential files were not cleaned up")
-        for sensitive in ["test private key placeholder", "test hash placeholder", "test password placeholder"]:
-            self.assertNotIn(sensitive, result.stdout + result.stderr)
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
+        for sensitive in ["test private key placeholder", "test hash placeholder", "test password placeholder", "test bootstrap password placeholder"]:
+            self.assertNotIn(sensitive, result.stdout + result.stderr + json.dumps(calls))
         return result, calls
 
     def test_check_mode_and_credential_isolation(self):
@@ -94,6 +99,75 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("bootstrap.yml", calls[-1]["args"])
         self.assertNotIn("--check", calls[-1]["args"])
         self.assertTrue(calls[-1]["has_bootstrap_hash"])
+
+    def test_password_bootstrap_without_private_key(self):
+        result, calls = self.run_deployment(
+            DEPLOY_PLAYBOOK="bootstrap", DEPLOY_SSH_PRIVATE_KEY="",
+            DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--check", calls[-1]["args"])
+        for call in calls:
+            for key in ["password_private", "password_matches", "directory_private", "raw_password_removed", "raw_key_removed"]:
+                self.assertTrue(call[key])
+            self.assertEqual(call["password_mechanism"], "ssh_askpass")
+            self.assertNotIn("--private-key", call["args"])
+        options = calls[-1]["args"][calls[-1]["args"].index("--ssh-common-args") + 1]
+        for option in ["StrictHostKeyChecking=yes", "BatchMode=no", "PreferredAuthentications=password", "PasswordAuthentication=yes", "PubkeyAuthentication=no"]:
+            self.assertIn(option, options)
+
+    def test_bootstrap_password_takes_precedence_over_key(self):
+        result, calls = self.run_deployment(
+            DEPLOY_PLAYBOOK="bootstrap", DEPLOY_MODE="apply",
+            DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--connection-password-file", calls[-1]["args"])
+        self.assertNotIn("--private-key", calls[-1]["args"])
+        self.assertNotIn("--check", calls[-1]["args"])
+
+    def test_routine_runs_ignore_bootstrap_credentials(self):
+        for playbook in ["site", "maintenance"]:
+            with self.subTest(playbook=playbook):
+                result, calls = self.run_deployment(
+                    DEPLOY_PLAYBOOK=playbook,
+                    DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder",
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for call in calls:
+                    self.assertTrue(call["raw_password_removed"])
+                    self.assertFalse(call["has_bootstrap_hash"])
+                    self.assertNotIn("--connection-password-file", call["args"])
+                options = calls[-1]["args"][calls[-1]["args"].index("--ssh-common-args") + 1]
+                self.assertIn("PasswordAuthentication=no", options)
+                self.assertIn("BatchMode=yes", options)
+                self.calls.unlink()
+                result, calls = self.run_deployment(
+                    DEPLOY_PLAYBOOK=playbook, DEPLOY_SSH_PRIVATE_KEY="",
+                    DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder",
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(calls, [])
+
+    def test_bootstrap_requires_a_password_or_key(self):
+        result, calls = self.run_deployment(DEPLOY_PLAYBOOK="bootstrap", DEPLOY_SSH_PRIVATE_KEY="")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [])
+
+    def test_password_bootstrap_validates_host_keys_and_cleans_up(self):
+        result, calls = self.run_deployment(
+            DEPLOY_PLAYBOOK="bootstrap", DEPLOY_SSH_PRIVATE_KEY="",
+            DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder", TEST_KEY_EXIT="1",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [])
+
+    def test_password_failure_propagates_and_cleans_credentials(self):
+        result, _ = self.run_deployment(
+            DEPLOY_PLAYBOOK="bootstrap", DEPLOY_MODE="apply", DEPLOY_SSH_PRIVATE_KEY="",
+            DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder", TEST_APPLY_EXIT="4",
+        )
+        self.assertEqual(result.returncode, 4)
 
     def test_rejects_patterns_and_shell_injection(self):
         for target in ["all", "dev*", "dev01,dev02", "dev01; touch /tmp/unwanted", "$(id)", "--help"]:

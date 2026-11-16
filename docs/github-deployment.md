@@ -12,9 +12,10 @@ Copy [the inventory template](../inventories/example/hosts.yml), replace the add
 | --- | --- | --- |
 | `ANSIBLE_INVENTORY` | Variable | Inventory YAML with connection details, public keys, and any host-specific overrides. |
 | `ANSIBLE_KNOWN_HOSTS` | Variable | Independently verified OpenSSH `known_hosts` entries. |
-| `ANSIBLE_SSH_PRIVATE_KEY` | Secret | Dedicated automation key authorized for the connection account; usable without an interactive passphrase. |
+| `ANSIBLE_BOOTSTRAP_PASSWORD` | Optional secret | Initial root SSH password. Used only for `bootstrap`; no private key is required for this connection. |
+| `ANSIBLE_SSH_PRIVATE_KEY` | Secret for key access | Dedicated automation key for routine `dev` access, or bootstrap when no initial password is supplied. Must be usable without an interactive passphrase. |
 | `ANSIBLE_BECOME_PASSWORD` | Optional secret | Sudo password for routine runs; omit for working passwordless sudo. |
-| `DEV_PASSWORD_HASH` | Optional secret | Account-creation hash for bootstrap; see [sudo authentication](configuration.md#sudo-authentication). |
+| `DEV_PASSWORD_HASH` | Optional secret | New `dev` account's password hash for sudo; separate from the initial root password. See [sudo authentication](configuration.md#sudo-authentication). |
 
 Keep passwords, hashes, and tokens out of the inventory and workflow inputs. For Doppler-managed values, use your established secure synchronization into GitHub environment secrets.
 
@@ -28,12 +29,19 @@ Choose credentials for the account used by the selected playbook:
 
 | Playbook | SSH account and credentials |
 | --- | --- |
-| `bootstrap` | Root. The environment's SSH key must already be authorized for root. Supply `DEV_PASSWORD_HASH` for a new account, or explicitly choose passwordless sudo. |
+| `bootstrap` | Root, using `ANSIBLE_BOOTSTRAP_PASSWORD` when set. Otherwise the supplied SSH key must already be authorized for root. Supply `DEV_PASSWORD_HASH` for the new development account, or explicitly choose passwordless sudo. |
 | `site` / `maintenance` | The inventory account, normally `dev`. Its key and sudo authentication must already work. |
 
-Use separate environments if bootstrap and routine runs require different keys. Bootstrap creates the account and approved keys without restricting SSH. Afterward, use the routine environment for `site`. If root login is disabled and `dev` works, skip bootstrap.
+For a new VPS with password access:
 
-Password-only initial root access requires a [local bootstrap run](development.md#bootstrap-and-apply); the workflow is noninteractive. Keep provider-console access available for recovery.
+1. Set `ANSIBLE_BOOTSTRAP_PASSWORD` to the provider's initial root password.
+2. Prepare a deployment key pair once. Include its public half in `dev_host_authorized_keys` and save its private half as `ANSIBLE_SSH_PRIVATE_KEY` for subsequent runs. The initial root account does not need this key installed.
+3. Run `bootstrap` with `apply` to create `dev`, grant sudo access, and install the approved keys. Bootstrap leaves SSH policy unchanged.
+4. Run `site` using the deployment key. It verifies a fresh `dev` login and sudo before hardening SSH, then verifies access again. The default policy disables password SSH authentication for all accounts and disables root SSH entirely.
+
+When both credentials are present, bootstrap uses the password without falling back to the key. `site` and `maintenance` always use the key and exclude the initial password. Remove the initial password from the environment once bootstrap is complete. If root login is already disabled and `dev` works, skip bootstrap.
+
+Key-based bootstrap remains supported; use separate environments if its root key differs from the routine key. For an interactive controller, see [local bootstrap](development.md#bootstrap-and-apply). Keep provider-console access available for recovery.
 
 ## 3. Check, review, and apply
 
@@ -50,7 +58,7 @@ Host patterns and multiple targets are rejected. The selected playbook must reso
 
 ## Execution details
 
-The workflow installs pinned dependencies through `scripts/setup` and runs `scripts/check` before the deployment step receives secrets. The runner validates key formats, playbook syntax, and host selection; enforces SSH host-key checking; and invokes Ansible without prompts or `--diff`. Private temporary credential files are removed on exit and ordinary cancellation signals. Sudo authentication is passed through the environment. The account-creation hash is excluded from routine Ansible subprocesses.
+The workflow installs pinned dependencies through `scripts/setup` and runs `scripts/check` before the deployment step receives secrets. The runner validates key formats, playbook syntax, and host selection; enforces SSH host-key checking; and invokes Ansible without interactive prompts or `--diff`. Password bootstrap uses Ansible's connection-password file and built-in `ssh_askpass` mechanism; it does not require `sshpass`. Passwords are never placed in command arguments. Temporary credential files use mode `0600` in a `0700` directory and are removed on exit and ordinary cancellation signals. Sudo authentication is passed through the environment. The initial password and account-creation hash are excluded from routine Ansible subprocesses.
 
 Codex/ClickUp login and Moshi pairing remain [interactive onboarding](configuration.md#account-onboarding). Controller-local configuration files must be available on the runner before setting their source paths; leave those settings empty to preserve existing files.
 

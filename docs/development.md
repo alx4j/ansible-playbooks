@@ -22,7 +22,7 @@ For a new host, prepare [sudo authentication](configuration.md#sudo-authenticati
 .venv/bin/ansible-playbook -i inventories/local/hosts.yml bootstrap.yml --limit dev01
 ```
 
-Bootstrap explicitly connects as root, regardless of the inventory's routine user, and leaves SSH policy unchanged. Add `--ask-pass` if initial root SSH access requires a password. Skip bootstrap when `dev` already has working SSH and sudo access.
+Bootstrap explicitly connects as root, regardless of the inventory's routine user, and leaves SSH policy unchanged. Add `--ask-pass` if initial root SSH access requires a password. GitHub runs use the equivalent [bootstrap password secret](github-deployment.md#2-establish-access) without an interactive prompt. Skip bootstrap when `dev` already has working SSH and sudo access.
 
 Review the selected hosts and predict routine changes:
 
@@ -58,10 +58,10 @@ scripts/test-tools-container
 | Check | Coverage |
 | --- | --- |
 | `scripts/check` | Unit tests, production ansible-lint profile, playbook syntax, host/task listings, inventory resolution, and Git whitespace. No managed-host connection. |
-| `scripts/test-container` | Real account creation and sudo; preservation of unrelated groups/keys; SSH candidate validation with real `sshd`; zero changes on the second run. |
+| `scripts/test-container` | Real account creation and sudo; preservation of unrelated groups/keys; SSH candidate validation; zero changes on the second run; password bootstrap followed by development-key login and sudo through loopback SSH. |
 | `scripts/test-tools-container` | Actual Java, SDKMAN, Gradle, Codex, and Moshi installations, followed by a second run requiring zero changes. |
 
-Deployment-runner unit tests use stub commands to check target selection, check/apply modes, credential permissions and cleanup, and failure propagation. They do not establish that a live deployment succeeds.
+Deployment-runner unit tests use stub commands to check target selection, check/apply modes, password/key selection, credential permissions and cleanup, and failure propagation. The container SSH test runs the actual deployment script against focused account/access fixtures, rejects incorrect passwords and untrusted host keys, and verifies the new user's key and sudo access. These fixtures do not execute the full systemd-dependent playbooks.
 
 Container tests use Podman by default; set `CONTAINER_ENGINE=docker` to use Docker. They build a disposable Debian 13 image and download upstream packages. No production credentials are mounted or pairing performed. Containers are removed; the test image remains cached.
 
