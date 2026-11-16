@@ -14,6 +14,6 @@
 - name: Establish the development account
   ansible.builtin.import_tasks: account.yml
 
-- name: Explain the access transition
+- name: Report the established development account
   ansible.builtin.debug:
-    msg: Bootstrap has not restricted SSH. Run site.yml as the development user with working sudo access to finish setup.
+    msg: The development account is ready. SSH policy is unchanged.

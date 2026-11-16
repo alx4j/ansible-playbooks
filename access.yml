@@ -1,0 +1,11 @@
+---
+- name: Verify existing development access before choosing the setup path
+  hosts: development
+  gather_facts: false
+  become: true
+  serial: 1
+  tasks:
+    - name: Verify the development account and sudo over a fresh connection
+      ansible.builtin.import_role:
+        name: dev_host
+        tasks_from: access

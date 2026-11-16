@@ -7,6 +7,7 @@ exercise the full systemd-dependent bootstrap or routine host configuration.
 import json
 import os
 from pathlib import Path
+import pwd
 import secrets
 import shutil
 import socket
@@ -28,7 +29,7 @@ def main():
         text=True, check=True, capture_output=True,
     )
     sudo_policy = Path("/etc/sudoers.d/initialadmin-test")
-    sudo_policy.write_text("Defaults:initialadmin timestamp_timeout=0\n")
+    sudo_policy.write_text("Defaults:initialadmin timestamp_timeout=0\nDefaults:dev timestamp_timeout=0\n")
     sudo_policy.chmod(0o440)
     subprocess.run(["visudo", "-cf", str(sudo_policy)], check=True, capture_output=True)
 
@@ -37,6 +38,7 @@ def main():
         (root / "scripts").mkdir()
         shutil.copy2(source / "scripts/deploy", root / "scripts/deploy")
         shutil.copy2(source / "scripts/github-deploy.py", root / "scripts/github-deploy.py")
+        shutil.copy2(source / "access.yml", root / "access.yml")
         fixture = yaml.safe_load((source / "tests/fixtures/bootstrap-access.yml").read_text())
         # Exercise the actual bootstrap user/escalation expressions while the
         # fixture limits remote work to account tasks supported by containers.
@@ -135,10 +137,10 @@ def main():
             deploy()
             deploy(DEPLOY_PLAYBOOK="site", DEPLOY_SSH_PRIVATE_KEY=private_key)
 
-            # Exercise the exact workflow adapter, including generated inventory,
-            # derived public key/hash, and password-based sudo for the new dev user.
+            # Exercise the combined workflow from a missing dev account through
+            # creation, a fresh key/sudo login, and automatic reuse on later runs.
             event = {"inputs": {
-                "playbook": "bootstrap", "mode": "apply", "server_address": "127.0.0.1",
+                "mode": "check", "server_address": "127.0.0.1",
                 "bootstrap_user": "initialadmin", "bootstrap_password": initial_password,
             }}
             event_file = root / "event.json"
@@ -148,15 +150,40 @@ def main():
                 "GITHUB_EVENT_PATH": str(event_file), "DEPLOY_SSH_PORT": str(port),
                 "DEPLOY_SSH_PRIVATE_KEY": private_key, "DEV_PASSWORD": dev_password,
             })
-            deploy(github=True)
-            output = deploy(github=True)
-            assert "changed=0" in output, "Repeated workflow bootstrap did not converge"
-            event["inputs"]["playbook"] = "site"
+            output = deploy(False, github=True)
+            assert "Use apply for first setup" in output, output
+            try:
+                pwd.getpwnam("dev")
+            except KeyError:
+                pass
+            else:
+                raise AssertionError("Check mode created the development account")
+            event["inputs"]["mode"] = "apply"
             event_file.write_text(json.dumps(event))
+            output = deploy(False, github=True, DEPLOY_KNOWN_HOSTS=f"[127.0.0.1]:{port} {wrong_host_key}")
+            assert "Please add this host's fingerprint to your known_hosts file" in output, output
+            try:
+                pwd.getpwnam("dev")
+            except KeyError:
+                pass
+            else:
+                raise AssertionError("An untrusted host key allowed account creation")
+            output = deploy(github=True)
+            assert "Establishing development access" in output, output
+            assert "Configuring the server through development-user SSH key access" in output, output
+
             output = deploy(False, github=True, DEV_PASSWORD="deliberately incorrect development password")
             assert "Incorrect sudo password" in output, output
+            assert "Establishing development access" not in output, "Sudo failure triggered bootstrap"
+            event["inputs"].update(bootstrap_user="unusedadmin", bootstrap_password="obsolete initial password")
+            event_file.write_text(json.dumps(event))
+            output = deploy(github=True)
+            assert "Establishing development access" not in output, "Rerun used the initial administrator"
+            assert "changed=0" in output, "Repeated configuration did not converge"
+            event["inputs"]["mode"] = "check"
+            event_file.write_text(json.dumps(event))
             deploy(github=True)
-            print("Root/sudo bootstrap, workflow inputs, convergence, rejected credentials, and development key/sudo access passed")
+            print("Root/sudo bootstrap, automatic key handoff, reruns, check mode, and rejected credentials passed")
         finally:
             server.terminate()
             try:

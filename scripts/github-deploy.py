@@ -1,5 +1,6 @@
-"""Translate manual workflow inputs into the deployment runner's environment."""
+"""Run server setup with an automatic handoff to development-user access."""
 
+import argparse
 import ipaddress
 import json
 import os
@@ -42,10 +43,9 @@ def prepare_environment(event, environment):
     if not isinstance(event, dict) or not isinstance(event.get("inputs"), dict):
         raise ValueError("The workflow event must contain deployment inputs.")
     inputs = event.get("inputs", {})
-    playbook = inputs.get("playbook", "")
     mode = inputs.get("mode", "")
-    if playbook not in ("bootstrap", "site", "maintenance") or mode not in ("check", "apply"):
-        raise ValueError("Select a supported playbook and check/apply mode.")
+    if mode not in ("check", "apply"):
+        raise ValueError("Select check or apply mode.")
 
     address = inputs.get("server_address", "")
     if not isinstance(address, str) or not address:
@@ -64,6 +64,11 @@ def prepare_environment(event, environment):
     bootstrap_user = inputs.get("bootstrap_user") or "root"
     if not isinstance(bootstrap_user, str) or not re.fullmatch(r"[a-z_][a-z0-9_-]*", bootstrap_user):
         raise ValueError("Provide a valid initial administrator username.")
+    initial_password = inputs.get("bootstrap_password", "")
+    if not isinstance(initial_password, str):
+        raise ValueError("Bootstrap password must be text.")
+    if initial_password != initial_password.strip() or "\0" in initial_password:
+        raise ValueError("Bootstrap password cannot have surrounding whitespace or null characters.")
     try:
         port = int(environment.get("DEPLOY_SSH_PORT") or "22")
     except ValueError:
@@ -82,18 +87,9 @@ def prepare_environment(event, environment):
 
     # Do not forward unused credentials or the event-file path to Ansible.
     for name in ("DOPPLER_TOKEN", "GITHUB_EVENT_PATH", "DEPLOY_BOOTSTRAP_PASSWORD",
-                 "DEPLOY_BOOTSTRAP_BECOME_PASSWORD", "DEV_PASSWORD_HASH", "ANSIBLE_BECOME_PASS"):
+                 "DEPLOY_BOOTSTRAP_BECOME_PASSWORD", "DEV_PASSWORD_HASH", "DEPLOY_PLAYBOOK"):
         env.pop(name, None)
-    if playbook == "bootstrap":
-        initial_password = inputs.get("bootstrap_password", "")
-        if not isinstance(initial_password, str):
-            raise ValueError("Bootstrap password must be text.")
-        if initial_password != initial_password.strip() or "\0" in initial_password:
-            raise ValueError("Bootstrap password cannot have surrounding whitespace or null characters.")
-        env["DEPLOY_BOOTSTRAP_PASSWORD"] = initial_password
-        env["DEV_PASSWORD_HASH"] = password_hash(dev_password)
-    else:
-        env["ANSIBLE_BECOME_PASS"] = dev_password
+    env["ANSIBLE_BECOME_PASS"] = dev_password
 
     host = {
         "ansible_host": address,
@@ -104,21 +100,58 @@ def prepare_environment(event, environment):
         "dev_host_authorized_keys": [public_key(env["DEPLOY_SSH_PRIVATE_KEY"])],
     }
     inventory = {"all": {"children": {"development": {"hosts": {"dev01": host}}}}}
-    env.update({"DEPLOY_HOST": "dev01", "DEPLOY_PLAYBOOK": playbook,
-                "DEPLOY_MODE": mode, "DEPLOY_INVENTORY": json.dumps(inventory)})
+    env.update({"DEPLOY_HOST": "dev01", "DEPLOY_MODE": mode,
+                "DEPLOY_INVENTORY": json.dumps(inventory)})
     return env
 
 
-def main():
+def run_playbook(env, playbook, capture_output=False):
+    return subprocess.run(
+        [str(Path(__file__).with_name("deploy"))],
+        env={**env, "DEPLOY_PLAYBOOK": playbook},
+        text=True, capture_output=capture_output, check=False,
+    )
+
+
+def configure_server(env, initial_password):
+    print("Checking development-user SSH and sudo access.", flush=True)
+    access = run_playbook(env, "access", capture_output=True)
+    if access.returncode:
+        # Ansible uses 4 for an unreachable host. Authentication failures for a
+        # missing dev account are expected on first setup; task/sudo failures are not.
+        if access.returncode != 4 or env["DEPLOY_MODE"] == "check":
+            print(access.stdout + access.stderr, file=sys.stderr)
+            if access.returncode == 4 and env["DEPLOY_MODE"] == "check":
+                print("Development access is not ready. Use apply for first setup; check cannot create the account.", file=sys.stderr)
+            return access.returncode
+
+        print("Establishing development access through the initial administrator.", flush=True)
+        bootstrap_env = {**env, "DEPLOY_BOOTSTRAP_PASSWORD": initial_password,
+                         "DEV_PASSWORD_HASH": password_hash(env["ANSIBLE_BECOME_PASS"])}
+        bootstrap_env.pop("ANSIBLE_BECOME_PASS")
+        if env.get("GITHUB_ACTIONS") == "true":
+            # Runner masking commands do not appear as visible log entries.
+            print("::add-mask::" + bootstrap_env["DEV_PASSWORD_HASH"], flush=True)
+        bootstrap = run_playbook(bootstrap_env, "bootstrap")
+        if bootstrap.returncode:
+            return bootstrap.returncode
+
+    # The site play reopens and verifies dev access before making host changes.
+    print("Configuring the server through development-user SSH key access.", flush=True)
+    return run_playbook(env, "site").returncode
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--maintenance", action="store_true", help="Upgrade packages using existing development access.")
+    args = parser.parse_args(argv)
     try:
         with open(os.environ["GITHUB_EVENT_PATH"]) as event_file:
             event = json.load(event_file)
         env = prepare_environment(event, dict(os.environ))
-        if os.environ.get("GITHUB_ACTIONS") == "true" and env.get("DEV_PASSWORD_HASH"):
-            # This is a runner masking command, not a visible log entry.
-            print("::add-mask::" + env["DEV_PASSWORD_HASH"], flush=True)
-        result = subprocess.run([str(Path(__file__).with_name("deploy"))], env=env, check=False)
-        return result.returncode
+        if args.maintenance:
+            return run_playbook(env, "maintenance").returncode
+        return configure_server(env, event["inputs"].get("bootstrap_password", ""))
     except (OSError, KeyError, json.JSONDecodeError, subprocess.TimeoutExpired):
         print("Could not prepare deployment inputs or run the deployment tools.", file=sys.stderr)
         return 1

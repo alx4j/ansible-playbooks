@@ -1,37 +1,24 @@
-name: Deploy Ansible manually
-run-name: "${{ inputs.mode }} ${{ inputs.playbook }} (${{ inputs.environment }})"
+name: Bootstrap dev server
+run-name: "Bootstrap dev server: ${{ inputs.mode }}"
 
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: GitHub environment containing the deployment configuration
-        type: environment
-        required: true
-      playbook:
-        description: Playbook to run
-        type: choice
-        required: true
-        default: site
-        options:
-          - site
-          - bootstrap
-          - maintenance
       server_address:
         description: Server IP address or hostname
         type: string
         required: true
       bootstrap_user:
-        description: Existing administrator account (bootstrap only)
+        description: Initial administrator account (first setup only)
         type: string
         required: false
         default: root
       bootstrap_password:
-        description: Initial SSH and sudo password (bootstrap only; ordinary workflow input)
+        description: Initial SSH and sudo password (first setup only; ordinary workflow input)
         type: string
         required: false
       mode:
-        description: Check predicts changes; apply modifies the selected host
+        description: Preview changes (check) or make changes (apply)
         type: choice
         required: true
         default: check
@@ -42,7 +29,7 @@ on:
 permissions:
   contents: read
 
-# Serialize all deployments, including different environments that share a VPS.
+# Serialize deployments so two runs cannot change the server at once.
 concurrency:
   group: ansible-deployment
   cancel-in-progress: false
@@ -52,7 +39,7 @@ jobs:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: ${{ inputs.environment }}
+    environment: development
     steps:
       - name: Mask the bootstrap password before other steps
         # Read the event file so the value never appears in a step's env header.
@@ -80,7 +67,7 @@ jobs:
         run: scripts/setup
       - name: Validate the checked-out playbooks
         run: scripts/check
-      - name: Run the selected playbook
+      - name: Bootstrap and configure the development server
         env:
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
