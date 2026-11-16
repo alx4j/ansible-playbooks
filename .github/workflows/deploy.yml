@@ -1,5 +1,5 @@
 name: Deploy Ansible manually
-run-name: "${{ inputs.mode }} ${{ inputs.playbook }} on ${{ inputs.host }} (${{ inputs.environment }})"
+run-name: "${{ inputs.mode }} ${{ inputs.playbook }} (${{ inputs.environment }})"
 
 on:
   workflow_dispatch:
@@ -17,11 +17,19 @@ on:
           - site
           - bootstrap
           - maintenance
-      host:
-        description: Exact inventory hostname (one host, not a pattern)
+      server_address:
+        description: Server IP address or hostname
         type: string
         required: true
-        default: dev01
+      bootstrap_user:
+        description: Existing administrator account (bootstrap only)
+        type: string
+        required: false
+        default: root
+      bootstrap_password:
+        description: Initial SSH and sudo password (bootstrap only; ordinary workflow input)
+        type: string
+        required: false
       mode:
         description: Check predicts changes; apply modifies the selected host
         type: choice
@@ -46,6 +54,20 @@ jobs:
     timeout-minutes: 45
     environment: ${{ inputs.environment }}
     steps:
+      - name: Mask the bootstrap password before other steps
+        # Read the event file so the value never appears in a step's env header.
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          with open(os.environ["GITHUB_EVENT_PATH"]) as event_file:
+              password = json.load(event_file).get("inputs", {}).get("bootstrap_password", "")
+          if not isinstance(password, str):
+              raise SystemExit("Bootstrap password must be text.")
+          if password:
+              escaped = password.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+              print("::add-mask::" + escaped)
+          PY
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -60,15 +82,10 @@ jobs:
         run: scripts/check
       - name: Run the selected playbook
         env:
-          DEPLOY_PLAYBOOK: ${{ inputs.playbook }}
-          DEPLOY_HOST: ${{ inputs.host }}
-          DEPLOY_MODE: ${{ inputs.mode }}
-          DEPLOY_INVENTORY: ${{ vars.ANSIBLE_INVENTORY }}
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
-          DEPLOY_BOOTSTRAP_PASSWORD: ${{ inputs.playbook == 'bootstrap' && secrets.ANSIBLE_BOOTSTRAP_PASSWORD || '' }}
+          DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
-          ANSIBLE_BECOME_PASS: ${{ secrets.ANSIBLE_BECOME_PASSWORD }}
-          DEV_PASSWORD_HASH: ${{ secrets.DEV_PASSWORD_HASH }}
+          DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
         run: |
           export PATH="$PWD/.venv/bin:$PATH"
-          scripts/deploy
+          python3 scripts/github-deploy.py

@@ -4,7 +4,7 @@
 
 [Role defaults](../roles/dev_host/defaults/main.yml) are the shared source for package choices, tool versions, SSH policy, and optional features. Both local runs and GitHub Actions use them. Change a shared default in a reviewed commit; put host-specific overrides beside that host in the inventory.
 
-Use [the inventory template](../inventories/example/hosts.yml) for both controllers. Replace the documentation address and supply at least one approved **public** key:
+For local runs, use [the inventory template](../inventories/example/hosts.yml). Replace the documentation address and supply at least one approved **public** key:
 
 ```yaml
 dev_host_authorized_keys:
@@ -13,17 +13,19 @@ dev_host_authorized_keys:
 
 Place that setting under `dev01`, beside `ansible_host` and `ansible_user`. Include the public half of the routine deployment key along with your workstation keys. The placeholder is not a usable key. Existing authorized keys and unrelated supplementary groups are preserved.
 
-For local runs, save the completed file as `inventories/local/hosts.yml`. For Actions, use its contents as the environment's `ANSIBLE_INVENTORY` variable. Keep shared defaults out of these copies so they follow repository updates. Existing Ansible inventory `group_vars` files remain supported for deliberate overrides.
+Save the completed file as `inventories/local/hosts.yml`. GitHub Actions generates its one-host inventory from [workflow inputs and saved settings](github-deployment.md#1-configure-the-environment), using `dev` and the deployment key's public half. It does not read an `ANSIBLE_INVENTORY` variable. Keep shared defaults out of local copies so they follow repository updates. Existing Ansible inventory `group_vars` files remain supported for deliberate overrides.
 
 Keep private connection details in the local inventory or GitHub settings. Keep passwords, hashes, tokens, private keys, and account files out of tracked files and inventory. `inventories/local/`, `private/`, environments, caches, and logs are ignored by Git.
 
 ## Sudo authentication
 
-The initial root SSH password (`ANSIBLE_BOOTSTRAP_PASSWORD` in GitHub) is only for connecting before `dev` exists. It does not set the development account's password or authorize sudo for that account.
+The initial account's password connects before `dev` exists. In GitHub, enter it in the `bootstrap_password` run field; non-root bootstrap reuses it for the initial account's sudo. It does not set the development account's password.
 
-The default is password-based sudo. For a new account, inject `DEV_PASSWORD_HASH` containing a SHA-512 crypt or yescrypt hash. Bootstrap preserves existing passwords through `update_password: on_create`. Subsequent runs need the corresponding sudo password through GitHub's `ANSIBLE_BECOME_PASSWORD` secret or the local `--ask-become-pass` prompt.
+The default is password-based sudo. GitHub needs one environment secret, `DEV_PASSWORD`: bootstrap derives a salted SHA-512 crypt hash for account creation; routine runs use the same password for sudo. Bootstrap preserves existing passwords through `update_password: on_create`. If `dev` already exists, use its current password. Changing the secret does not reset an existing account's password. SSH login still uses keys.
 
-To choose passwordless sudo explicitly, set `dev_host_passwordless_sudo: true`. This installs a validated, project-owned sudoers file. Do not switch it back to `false` until the account has another working sudo authentication method.
+For local bootstrap, provide a SHA-512 crypt or yescrypt hash through `DEV_PASSWORD_HASH`. Local routine runs can prompt for the original sudo password through `--ask-become-pass`.
+
+For local inventories, choose passwordless sudo explicitly with `dev_host_passwordless_sudo: true`. This installs a validated, project-owned sudoers file. Do not switch it back to `false` until the account has another working sudo authentication method. The simplified GitHub workflow requires `DEV_PASSWORD`.
 
 For local Doppler use, resolve the established secret name from the selected profile's `integrations.json`, then use the installed `doppler-secrets` wrapper to map it to `DEV_PASSWORD_HASH` for bootstrap. Add a missing mapping through your secure setup. Never put a hash or password in command arguments or shell history.
 
@@ -33,6 +35,7 @@ All role inputs use the `dev_host_` prefix. The defaults file defines their curr
 
 | Setting | Effect |
 | --- | --- |
+| `dev_host_bootstrap_user` | Initial administrator used only by `bootstrap.yml`; defaults to `root`. An existing non-root account must already have sudo access. |
 | `dev_host_user` | Development account; defaults to `dev`. Keep routine `ansible_user` consistent with it. |
 | `dev_host_passwordless_sudo` | Opt into passwordless sudo; disabled by default. |
 | `dev_host_ssh_port` | Existing SSH port used by the firewall rule. Keep `ansible_port` consistent; this does not change sshd's listening port. |

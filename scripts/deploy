@@ -18,15 +18,18 @@ case "${DEPLOY_MODE:-}" in
   *) fail 'Select check or apply mode.' ;;
 esac
 [[ "${DEPLOY_HOST:-}" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || fail 'Select one exact inventory hostname.'
-[[ -n "${DEPLOY_INVENTORY:-}" ]] || fail 'Set the ANSIBLE_INVENTORY environment variable in GitHub.'
+[[ -n "${DEPLOY_INVENTORY:-}" ]] || fail 'Supply DEPLOY_INVENTORY through the deployment adapter.'
 [[ -n "${DEPLOY_KNOWN_HOSTS:-}" ]] || fail 'Set the verified ANSIBLE_KNOWN_HOSTS environment variable in GitHub.'
 
-# Initial credentials must never be used for routine development-user access.
-if [[ "$DEPLOY_PLAYBOOK" != bootstrap ]]; then
+# Keep the initial administrator's sudo credential separate from dev's.
+if [[ "$DEPLOY_PLAYBOOK" == bootstrap ]]; then
+  export ANSIBLE_BECOME_PASS="${DEPLOY_BOOTSTRAP_BECOME_PASSWORD:-${DEPLOY_BOOTSTRAP_PASSWORD:-}}"
+else
   unset DEPLOY_BOOTSTRAP_PASSWORD DEV_PASSWORD_HASH
 fi
+unset DEPLOY_BOOTSTRAP_BECOME_PASSWORD
 if [[ -z "${DEPLOY_BOOTSTRAP_PASSWORD:-}" && -z "${DEPLOY_SSH_PRIVATE_KEY:-}" ]]; then
-  fail 'Set ANSIBLE_SSH_PRIVATE_KEY, or ANSIBLE_BOOTSTRAP_PASSWORD for initial bootstrap.'
+  fail 'Supply a deployment SSH key, or a password for initial bootstrap.'
 fi
 
 umask 077

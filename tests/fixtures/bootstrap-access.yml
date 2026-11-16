@@ -2,9 +2,6 @@
 - name: Create development access over password-authenticated SSH
   hosts: development
   gather_facts: false
-  vars:
-    ansible_user: root
-    ansible_become: false
   tasks:
     - name: Apply the production account tasks over SSH
       ansible.builtin.import_role:

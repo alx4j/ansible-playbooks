@@ -7,9 +7,9 @@ The managed host needs Debian/Ubuntu, Python 3, OpenSSH, APT, and systemd. The c
 ## Deploy through GitHub Actions
 
 1. Merge the workflow into the default branch.
-2. Follow [deployment setup](docs/github-deployment.md#1-configure-the-environment) to configure a GitHub environment, inventory, SSH key, and trusted host keys.
-3. For a new host, [bootstrap the development account](docs/github-deployment.md#2-establish-access) with the initial root password in `ANSIBLE_BOOTSTRAP_PASSWORD`. Skip bootstrap if `dev` already has working SSH and sudo access.
-4. Run **Actions → Deploy Ansible manually → Run workflow**, selecting the default branch, environment, exact host alias, `site`, and `check`.
+2. Follow [deployment setup](docs/github-deployment.md#1-configure-the-environment) to save the deployment private key, `DEV_PASSWORD`, and trusted host keys in a GitHub environment. No inventory YAML is needed in GitHub.
+3. For a new host, [bootstrap the development account](docs/github-deployment.md#2-establish-access) by entering the server address, initial administrator username, and password in the run form. The password is an ordinary workflow input with log masking. Skip bootstrap if `dev` already has working SSH and sudo access.
+4. Run **Actions → Deploy Ansible manually → Run workflow**, selecting the default branch, environment, server address, `site`, and `check`.
 5. Review the result, then run again with `apply`. Check mode connects to the host and is a partial simulation; see [its limitations](docs/github-deployment.md#3-check-review-and-apply).
 
 Deployments are manual. Pushes and pull requests run validation only. Keep provider-console access available when changing SSH or sudo.
@@ -18,7 +18,7 @@ Deployments are manual. Pushes and pull requests run validation only. Keep provi
 
 | Playbook | Purpose |
 | --- | --- |
-| `bootstrap.yml` | Connect as root; create the account, sudo access, and approved keys. Leave SSH policy unchanged. |
+| `bootstrap.yml` | Connect as the initial administrator; create the development account, sudo access, and approved keys. Leave SSH policy unchanged. |
 | `site.yml` | Verify development-user login and sudo, then configure the host. |
 | `maintenance.yml` | Upgrade packages; optionally purge unused dependencies and reboot when required. |
 

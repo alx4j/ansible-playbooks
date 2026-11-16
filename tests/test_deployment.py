@@ -26,8 +26,12 @@ result = {
     "directory_private": inventory.parent.stat().st_mode & 0o777 == 0o700,
     "raw_key_removed": "DEPLOY_SSH_PRIVATE_KEY" not in os.environ,
     "raw_password_removed": "DEPLOY_BOOTSTRAP_PASSWORD" not in os.environ,
+    "raw_bootstrap_sudo_removed": "DEPLOY_BOOTSTRAP_BECOME_PASSWORD" not in os.environ,
     "has_bootstrap_hash": bool(os.environ.get("DEV_PASSWORD_HASH")),
     "has_become_password": bool(os.environ.get("ANSIBLE_BECOME_PASS")),
+    "become_is_initial_login": os.environ.get("ANSIBLE_BECOME_PASS") == "test bootstrap password placeholder",
+    "become_is_initial_sudo": os.environ.get("ANSIBLE_BECOME_PASS") == "test initial sudo password placeholder",
+    "become_is_dev": os.environ.get("ANSIBLE_BECOME_PASS") == "test password placeholder",
     "host_key_checking": os.environ.get("ANSIBLE_HOST_KEY_CHECKING"),
 }
 with open(os.environ["TEST_CALLS"], "a") as log:
@@ -75,7 +79,7 @@ class DeploymentTests(unittest.TestCase):
         )
         self.assertEqual(list(self.runtime.iterdir()), [], "Credential files were not cleaned up")
         calls = [json.loads(line) for line in self.calls.read_text().splitlines()] if self.calls.exists() else []
-        for sensitive in ["test private key placeholder", "test hash placeholder", "test password placeholder", "test bootstrap password placeholder"]:
+        for sensitive in ["test private key placeholder", "test hash placeholder", "test password placeholder", "test bootstrap password placeholder", "test initial sudo password placeholder"]:
             self.assertNotIn(sensitive, result.stdout + result.stderr + json.dumps(calls))
         return result, calls
 
@@ -99,6 +103,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("bootstrap.yml", calls[-1]["args"])
         self.assertNotIn("--check", calls[-1]["args"])
         self.assertTrue(calls[-1]["has_bootstrap_hash"])
+        self.assertFalse(calls[-1]["has_become_password"])
 
     def test_password_bootstrap_without_private_key(self):
         result, calls = self.run_deployment(
@@ -111,6 +116,8 @@ class DeploymentTests(unittest.TestCase):
             for key in ["password_private", "password_matches", "directory_private", "raw_password_removed", "raw_key_removed"]:
                 self.assertTrue(call[key])
             self.assertEqual(call["password_mechanism"], "ssh_askpass")
+            self.assertTrue(call["become_is_initial_login"])
+            self.assertFalse(call["become_is_dev"])
             self.assertNotIn("--private-key", call["args"])
         options = calls[-1]["args"][calls[-1]["args"].index("--ssh-common-args") + 1]
         for option in ["StrictHostKeyChecking=yes", "BatchMode=no", "PreferredAuthentications=password", "PasswordAuthentication=yes", "PubkeyAuthentication=no"]:
@@ -132,10 +139,13 @@ class DeploymentTests(unittest.TestCase):
                 result, calls = self.run_deployment(
                     DEPLOY_PLAYBOOK=playbook,
                     DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder",
+                    DEPLOY_BOOTSTRAP_BECOME_PASSWORD="test initial sudo password placeholder",
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 for call in calls:
                     self.assertTrue(call["raw_password_removed"])
+                    self.assertTrue(call["raw_bootstrap_sudo_removed"])
+                    self.assertTrue(call["become_is_dev"])
                     self.assertFalse(call["has_bootstrap_hash"])
                     self.assertNotIn("--connection-password-file", call["args"])
                 options = calls[-1]["args"][calls[-1]["args"].index("--ssh-common-args") + 1]
@@ -148,6 +158,28 @@ class DeploymentTests(unittest.TestCase):
                 )
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(calls, [])
+
+    def test_explicit_bootstrap_sudo_password_overrides_login_password(self):
+        result, calls = self.run_deployment(
+            DEPLOY_PLAYBOOK="bootstrap",
+            DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder",
+            DEPLOY_BOOTSTRAP_BECOME_PASSWORD="test initial sudo password placeholder",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for call in calls:
+            self.assertTrue(call["become_is_initial_sudo"])
+            self.assertTrue(call["raw_bootstrap_sudo_removed"])
+            self.assertFalse(call["become_is_dev"])
+
+    def test_key_bootstrap_can_use_initial_sudo_password(self):
+        result, calls = self.run_deployment(
+            DEPLOY_PLAYBOOK="bootstrap",
+            DEPLOY_BOOTSTRAP_BECOME_PASSWORD="test initial sudo password placeholder",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--private-key", calls[-1]["args"])
+        self.assertTrue(calls[-1]["become_is_initial_sudo"])
+        self.assertFalse(calls[-1]["become_is_dev"])
 
     def test_bootstrap_requires_a_password_or_key(self):
         result, calls = self.run_deployment(DEPLOY_PLAYBOOK="bootstrap", DEPLOY_SSH_PRIVATE_KEY="")
