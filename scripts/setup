@@ -5,4 +5,5 @@ if [[ ! -x .venv/bin/python3 ]]; then
   python3 -m venv .venv
 fi
 .venv/bin/python3 -m pip install -r requirements-dev.txt
-.venv/bin/ansible-galaxy collection install -r requirements.yml -p .ansible/collections
+# Avoid incomplete Galaxy response-cache entries after a transient API failure.
+.venv/bin/ansible-galaxy collection install --no-cache -r requirements.yml -p .ansible/collections

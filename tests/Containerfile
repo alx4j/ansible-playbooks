@@ -6,5 +6,6 @@ RUN python3 -m venv /opt/ansible \
     && /opt/ansible/bin/pip install --no-cache-dir ansible-core==2.19.15
 ENV PATH="/opt/ansible/bin:$PATH"
 COPY requirements.yml /tmp/requirements.yml
-RUN ansible-galaxy collection install -r /tmp/requirements.yml -p /opt/collections
+# Avoid incomplete Galaxy response-cache entries after a transient API failure.
+RUN ansible-galaxy collection install --no-cache -r /tmp/requirements.yml -p /opt/collections
 WORKDIR /work
