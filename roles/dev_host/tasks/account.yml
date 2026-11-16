@@ -9,7 +9,7 @@
   ansible.builtin.assert:
     that:
       - ansible_facts.getent_passwd[dev_host_user] != none or dev_host_passwordless_sudo or dev_host_password_hash | length > 0
-    fail_msg: A new account needs DEV_PASSWORD_HASH from your secret provider or an explicit passwordless-sudo choice.
+    fail_msg: A new account needs SUDO_PASSWORD_HASH from your secret provider or an explicit passwordless-sudo choice.
   no_log: true
 
 - name: Validate an optional password hash

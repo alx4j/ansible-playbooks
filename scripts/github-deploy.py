@@ -1,4 +1,4 @@
-"""Run server setup with an automatic handoff to development-user access."""
+"""Bootstrap one server manually or update inventory servers with existing access."""
 
 import ipaddress
 import json
@@ -8,6 +8,9 @@ import re
 import subprocess
 import sys
 import tempfile
+
+
+INVENTORY = Path(__file__).resolve().parents[1] / "inventories/development/hosts.yml"
 
 
 def public_key(private_key):
@@ -25,10 +28,10 @@ def public_key(private_key):
 
 def password_hash(password):
     if any(character in password for character in "\r\n\0"):
-        raise ValueError("DEV_PASSWORD must be a single line without null characters.")
+        raise ValueError("SUDO_PASSWORD must be a single line without null characters.")
     # OpenSSL's passwd command otherwise truncates its input to 256 bytes.
     if len(password.encode("utf-8")) > 256:
-        raise ValueError("DEV_PASSWORD must be at most 256 UTF-8 bytes.")
+        raise ValueError("SUDO_PASSWORD must be at most 256 UTF-8 bytes.")
     result = subprocess.run(
         ["openssl", "passwd", "-6", "-stdin"], input=password + "\n",
         encoding="utf-8", stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10,
@@ -38,10 +41,13 @@ def password_hash(password):
     return result.stdout.strip()
 
 
-def prepare_environment(event, environment):
+def workflow_inputs(event):
     if not isinstance(event, dict) or not isinstance(event.get("inputs"), dict):
         raise ValueError("The workflow event must contain deployment inputs.")
-    inputs = event.get("inputs", {})
+    return event["inputs"]
+
+
+def server_address(inputs):
     address = inputs.get("server_address", "")
     if not isinstance(address, str) or not address:
         raise ValueError("Provide the server IP address or hostname.")
@@ -55,15 +61,80 @@ def prepare_environment(event, environment):
         )
         if len(address) > 253 or not valid_labels:
             raise ValueError("Provide one IP address or hostname, without a port or SSH options.")
+    return address
+
+
+def validate_bootstrap_password(password):
+    if not isinstance(password, str):
+        raise ValueError("Bootstrap password must be text.")
+    if password != password.strip() or "\0" in password:
+        raise ValueError("Bootstrap password cannot have surrounding whitespace or null characters.")
+
+
+def load_inventory():
+    if not INVENTORY.is_file():
+        raise ValueError("The development inventory is missing.")
+    result = subprocess.run(
+        ["ansible-inventory", "-i", str(INVENTORY), "--list"],
+        text=True, capture_output=True, timeout=30, check=False,
+        env={name: os.environ[name] for name in (
+            "PATH", "HOME", "LANG", "ANSIBLE_CONFIG", "ANSIBLE_COLLECTIONS_PATH", "ANSIBLE_LOCAL_TEMP",
+        ) if name in os.environ},
+    )
+    if result.returncode:
+        raise ValueError("Could not resolve the development inventory.")
+    inventory = json.loads(result.stdout)
+    if not isinstance(inventory, dict):
+        raise ValueError("The inventory must define the development group.")
+    if "development" not in inventory:
+        # Ansible omits empty groups but keeps their names in parent children.
+        declared = any("development" in group.get("children", [])
+                       for name, group in inventory.items() if name != "_meta" and isinstance(group, dict))
+        if not declared:
+            raise ValueError("The inventory must define the development group.")
+        inventory["development"] = {}
+    return inventory
+
+
+def resolve_target(event):
+    inputs = workflow_inputs(event)
+    address = server_address(inputs)
+    password = inputs.get("bootstrap_password", "")
+    validate_bootstrap_password(password)
+    inventory = load_inventory()
+    hostvars = inventory.get("_meta", {}).get("hostvars", {})
+    matches = [
+        hostvars.get(name, {}) for name in development_hosts(inventory)
+        if address == name or address == hostvars.get(name, {}).get("ansible_host")
+    ]
+    if len(matches) > 1:
+        raise ValueError("The server address matches multiple inventory entries; use a unique hostname.")
+    saved = matches[0] if matches else {}
+    address = server_address({"server_address": saved.get("ansible_host", address)})
+    return address
+
+
+def development_hosts(inventory):
+    hosts = set()
+    visited = set()
+    pending = ["development"]
+    while pending:
+        group = pending.pop()
+        if group not in visited:
+            visited.add(group)
+            hosts.update(inventory.get(group, {}).get("hosts", []))
+            pending.extend(inventory.get(group, {}).get("children", []))
+    return sorted(hosts)
+
+
+def prepare_environment(event, environment):
+    inputs = workflow_inputs(event)
+    address = server_address(inputs)
 
     bootstrap_user = inputs.get("bootstrap_user") or "root"
     if not isinstance(bootstrap_user, str) or not re.fullmatch(r"[a-z_][a-z0-9_-]*", bootstrap_user):
         raise ValueError("Provide a valid initial administrator username.")
-    initial_password = inputs.get("bootstrap_password", "")
-    if not isinstance(initial_password, str):
-        raise ValueError("Bootstrap password must be text.")
-    if initial_password != initial_password.strip() or "\0" in initial_password:
-        raise ValueError("Bootstrap password cannot have surrounding whitespace or null characters.")
+    validate_bootstrap_password(inputs.get("bootstrap_password", ""))
     try:
         port = int(environment.get("DEPLOY_SSH_PORT") or "22")
     except ValueError:
@@ -72,9 +143,12 @@ def prepare_environment(event, environment):
         raise ValueError("ANSIBLE_SSH_PORT must be an integer from 1 to 65535.")
 
     env = environment.copy()
-    dev_password = env.pop("DEV_PASSWORD", "")
-    if not dev_password:
-        raise ValueError("Set the DEV_PASSWORD environment secret for development-user sudo.")
+    sudo_user = env.pop("DEPLOY_SUDO_USER", "")
+    if not isinstance(sudo_user, str) or not re.fullmatch(r"[a-z_][a-z0-9_-]*", sudo_user) or sudo_user == "root":
+        raise ValueError("Set SUDO_USER to a valid non-root account name in the development environment.")
+    sudo_password = env.pop("SUDO_PASSWORD", "")
+    if not sudo_password:
+        raise ValueError("Set the SUDO_PASSWORD environment secret for development-user sudo.")
     if not env.get("DEPLOY_SSH_PRIVATE_KEY"):
         raise ValueError("Set ANSIBLE_SSH_PRIVATE_KEY for the development user's deployment key.")
     if not env.get("DEPLOY_KNOWN_HOSTS"):
@@ -82,14 +156,15 @@ def prepare_environment(event, environment):
 
     # Do not forward unused credentials or the event-file path to Ansible.
     for name in ("DOPPLER_TOKEN", "GITHUB_EVENT_PATH", "DEPLOY_BOOTSTRAP_PASSWORD",
-                 "DEPLOY_BOOTSTRAP_BECOME_PASSWORD", "DEV_PASSWORD_HASH", "DEPLOY_PLAYBOOK"):
+                 "DEPLOY_BOOTSTRAP_SECRET", "DEPLOY_BOOTSTRAP_BECOME_PASSWORD",
+                 "SUDO_PASSWORD_HASH", "DEPLOY_PLAYBOOK"):
         env.pop(name, None)
-    env["ANSIBLE_BECOME_PASS"] = dev_password
+    env["ANSIBLE_BECOME_PASS"] = sudo_password
 
     host = {
         "ansible_host": address,
         "ansible_port": port,
-        "ansible_user": "dev",
+        "sudo_user": sudo_user,
         "dev_host_bootstrap_user": bootstrap_user,
         "dev_host_ssh_port": port,
         "dev_host_authorized_keys": [public_key(env["DEPLOY_SSH_PRIVATE_KEY"])],
@@ -116,14 +191,15 @@ def configure_server(env, initial_password):
         if access.returncode != 4:
             print(access.stdout + access.stderr, file=sys.stderr)
             return access.returncode
+        validate_bootstrap_password(initial_password)
 
         print("Establishing development access through the initial administrator.", flush=True)
         bootstrap_env = {**env, "DEPLOY_BOOTSTRAP_PASSWORD": initial_password,
-                         "DEV_PASSWORD_HASH": password_hash(env["ANSIBLE_BECOME_PASS"])}
+                         "SUDO_PASSWORD_HASH": password_hash(env["ANSIBLE_BECOME_PASS"])}
         bootstrap_env.pop("ANSIBLE_BECOME_PASS")
         if env.get("GITHUB_ACTIONS") == "true":
             # Runner masking commands do not appear as visible log entries.
-            print("::add-mask::" + bootstrap_env["DEV_PASSWORD_HASH"], flush=True)
+            print("::add-mask::" + bootstrap_env["SUDO_PASSWORD_HASH"], flush=True)
         bootstrap = run_playbook(bootstrap_env, "bootstrap")
         if bootstrap.returncode:
             return bootstrap.returncode
@@ -133,12 +209,83 @@ def configure_server(env, initial_password):
     return run_playbook(env, "site").returncode
 
 
-def main():
+def prepare_inventory_environment(name, variables, environment):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name):
+        raise ValueError("Inventory entries must use exact hostnames, without patterns or SSH options.")
+    inputs = {"server_address": variables.get("ansible_host", name)}
+    env = prepare_environment({"inputs": inputs}, {
+        **environment,
+        "DEPLOY_SSH_PORT": str(variables.get("ansible_port", environment.get("DEPLOY_SSH_PORT") or "22")),
+    })
+    configured = json.loads(env["DEPLOY_INVENTORY"])["all"]["children"]["development"]["hosts"]["dev01"]
+    host = {**variables, **configured,
+            "ansible_user": configured["sudo_user"], "dev_host_user": configured["sudo_user"]}
+    host.pop("dev_host_bootstrap_user", None)
+    host.pop("bootstrap_password_secret", None)
+    env["DEPLOY_HOST"] = name
+    env["DEPLOY_INVENTORY"] = json.dumps({"all": {"children": {"development": {"hosts": {name: host}}}}})
+    return env
+
+
+def update_inventory(environment):
+    inventory = load_inventory()
+    names = development_hosts(inventory)
+    if not names:
+        message = "No enabled servers in the development inventory; nothing to configure."
+        print(f"::notice::{message}", flush=True)
+        if environment.get("GITHUB_STEP_SUMMARY"):
+            with open(environment["GITHUB_STEP_SUMMARY"], "a") as report:
+                report.write(message + "\n")
+        return 0
+    hostvars = inventory.get("_meta", {}).get("hostvars", {})
+    # Validate all targets and required settings before changing any server.
+    targets = [(name, prepare_inventory_environment(name, hostvars.get(name, {}), environment)) for name in names]
+    results = []
+    for name, env in targets:
+        print(f"Checking SSH and sudo access for {name}.", flush=True)
+        access = run_playbook(env, "access", capture_output=True)
+        if access.returncode:
+            print(access.stdout + access.stderr, file=sys.stderr)
+            # These are failed access tasks or unreachable hosts, respectively.
+            # Syntax, inventory, and runner errors remain failures.
+            if access.returncode in (2, 4):
+                message = (f"Skipped {name}: development-account SSH/sudo access is unavailable. "
+                           "Check access, or run Bootstrap VPS manually for first setup. Bootstrap credentials were not tried.")
+                print(f"::warning::{message}", flush=True)
+                results.append((name, "Skipped: SSH/sudo access unavailable"))
+            else:
+                print(f"::error::Access check could not run for {name} (exit {access.returncode}).", flush=True)
+                results.append((name, "Failed: access check error"))
+            continue
+
+        print(f"Configuring {name} through existing development access.", flush=True)
+        result = run_playbook(env, "site")
+        if result.returncode:
+            print(f"::error::Configuration failed for {name} (exit {result.returncode}).", flush=True)
+            results.append((name, "Failed: configuration error"))
+        else:
+            results.append((name, "Updated"))
+
+    summary = "### Inventory results\n\n| Server | Result |\n| --- | --- |\n"
+    summary += "".join(f"| {name} | {result} |\n" for name, result in results)
+    summary += "\nSkipped servers were left unchanged. First setup must be run manually.\n"
+    print(summary, flush=True)
+    if environment.get("GITHUB_STEP_SUMMARY"):
+        with open(environment["GITHUB_STEP_SUMMARY"], "a") as report:
+            report.write(summary)
+    return int(any(result.startswith("Failed:") for _, result in results))
+
+
+def main(*, update_only=False):
     try:
+        if update_only:
+            return update_inventory(dict(os.environ))
         with open(os.environ["GITHUB_EVENT_PATH"]) as event_file:
             event = json.load(event_file)
-        env = prepare_environment(event, dict(os.environ))
-        return configure_server(env, event["inputs"].get("bootstrap_password", ""))
+        inputs = {**workflow_inputs(event), "server_address": resolve_target(event)}
+        initial_password = inputs.get("bootstrap_password", "")
+        env = prepare_environment({"inputs": inputs}, dict(os.environ))
+        return configure_server(env, initial_password)
     except (OSError, KeyError, json.JSONDecodeError, subprocess.TimeoutExpired):
         print("Could not prepare deployment inputs or run the deployment tools.", file=sys.stderr)
         return 1
@@ -148,6 +295,6 @@ def main():
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 1:
-        raise SystemExit("This workflow runner accepts no command-line arguments.")
-    raise SystemExit(main())
+    if sys.argv[1:] not in ([], ["--update-inventory"]):
+        raise SystemExit("Unsupported workflow runner argument.")
+    raise SystemExit(main(update_only=bool(sys.argv[1:])))
