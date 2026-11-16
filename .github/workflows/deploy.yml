@@ -5,16 +5,15 @@ on:
   workflow_dispatch:
     inputs:
       server_address:
-        description: Server IP address or hostname
+        description: Server hostname, IP address, or inventory name
         type: string
         required: true
       bootstrap_user:
-        description: Initial administrator account (first setup only)
+        description: Initial administrator override (defaults to inventory account or root)
         type: string
         required: false
-        default: root
       bootstrap_password:
-        description: Initial SSH and sudo password (first setup only; ordinary workflow input)
+        description: Initial password override (blank uses the saved server secret; ordinary workflow input)
         type: string
         required: false
 
@@ -59,12 +58,19 @@ jobs:
         run: scripts/setup
       - name: Validate the checked-out playbooks
         run: scripts/check
+      - name: Resolve the server's saved bootstrap credential
+        id: target
+        run: |
+          export PATH="$PWD/.venv/bin:$PATH"
+          python3 scripts/github-deploy.py --resolve-target
       - name: Bootstrap and configure the development server
         env:
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
-          DEV_PASSWORD: ${{ secrets.DEV_PASSWORD }}
+          DEPLOY_SUDO_USER: ${{ vars.SUDO_USER }}
+          SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+          DEPLOY_BOOTSTRAP_SECRET: ${{ secrets[steps.target.outputs.bootstrap_password_secret] }}
         run: |
           export PATH="$PWD/.venv/bin:$PATH"
           python3 scripts/github-deploy.py

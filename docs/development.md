@@ -8,6 +8,8 @@ Use Python 3.13, Bash, and an SSH client. Install the OS's Python venv support i
 scripts/setup
 mkdir -p inventories/local
 cp -i inventories/example/hosts.yml inventories/local/hosts.yml
+read -r -p "Development account: " DEPLOY_SUDO_USER
+export DEPLOY_SUDO_USER
 ```
 
 `scripts/setup` creates `.venv` and installs the pinned Python dependencies and Ansible collections. CI checks and the deployment workflow use the same setup command; container tests install their dependencies in the test image.
@@ -22,7 +24,7 @@ For a new host, prepare [sudo authentication](configuration.md#sudo-authenticati
 .venv/bin/ansible-playbook -i inventories/local/hosts.yml bootstrap.yml --limit dev01
 ```
 
-Bootstrap connects as `dev_host_bootstrap_user` (default `root`), independently of the inventory’s routine `ansible_user`, and leaves SSH policy unchanged. Add `--ask-pass` when initial SSH access requires a password. For a non-root initial account, also add `--ask-become-pass` when sudo requires a password. Skip this local step when `dev` already has working SSH and sudo access. The **Bootstrap dev server** workflow handles this transition and the following configuration automatically using the [initial connection inputs](github-deployment.md#2-establish-access).
+Bootstrap connects as `dev_host_bootstrap_user` (default `root`) and creates the account selected through `DEPLOY_SUDO_USER`, leaving SSH policy unchanged. The inventory maps that controller variable to `sudo_user`; routine playbooks connect as that account. Add `--ask-pass` when initial SSH access requires a password. For a non-root initial account, also add `--ask-become-pass` when sudo requires a password. Skip this local step when the development account already has working SSH and sudo access. The **Bootstrap dev server** workflow handles this transition and the following configuration automatically using the [initial connection inputs](github-deployment.md#2-establish-access).
 
 Review the selected hosts and predict routine changes:
 
@@ -53,7 +55,7 @@ scripts/test-tools-container
 | `scripts/test-container` | Real account creation and sudo; preservation of unrelated groups/keys; SSH candidate validation; zero changes on the second run; root and sudo-user password bootstrap followed by development-key login and sudo through loopback SSH. |
 | `scripts/test-tools-container` | Actual Java, SDKMAN, Gradle, Codex, and Moshi installations, followed by a second run requiring zero changes. |
 
-Deployment-runner unit tests check target selection, password/key selection, credential permissions and cleanup, and failure propagation. Workflow tests cover form validation, generated inventory, the automatic credential handoff, reruns, failure boundaries, and first-step masking. The container SSH test runs both deployment scripts against the production access playbook and a focused account fixture. It rejects incorrect login/sudo passwords and untrusted host keys, verifies that the access probe creates no account, and follows account creation with a fresh `dev` key/sudo connection in the same run. Reruns skip the initial administrator and converge with zero changes. These tests do not execute the full systemd-dependent playbooks.
+Deployment-runner unit tests check target selection, password/key selection, credential permissions and cleanup, and failure propagation. Workflow tests cover form validation, generated inventory, the automatic credential handoff, reruns, failure boundaries, and first-step masking. The container SSH test runs both deployment scripts against the production access playbook and a focused account fixture. It rejects incorrect login/sudo passwords and untrusted host keys, verifies that the access probe creates no account, and follows account creation with a fresh configured-account key/sudo connection in the same run. Reruns skip the initial administrator and converge with zero changes. These tests do not execute the full systemd-dependent playbooks.
 
 Container tests use Podman by default; set `CONTAINER_ENGINE=docker` to use Docker. They build a disposable Debian 13 image and download upstream packages. No production credentials are mounted or pairing performed. Containers are removed; the test image remains cached.
 

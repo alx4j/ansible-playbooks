@@ -1,8 +1,8 @@
 ---
-dev_host_user: dev
+dev_host_user: "{{ sudo_user }}"
 dev_host_home: "/home/{{ dev_host_user }}"
 dev_host_authorized_keys: []
-dev_host_password_hash: "{{ lookup('ansible.builtin.env', 'DEV_PASSWORD_HASH') }}"
+dev_host_password_hash: "{{ lookup('ansible.builtin.env', 'SUDO_PASSWORD_HASH') }}"
 dev_host_passwordless_sudo: false
 dev_host_ssh_port: 22
 dev_host_ssh_permit_root_login: "no"

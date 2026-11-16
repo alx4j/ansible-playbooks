@@ -29,7 +29,7 @@ result = {
     "raw_key_removed": "DEPLOY_SSH_PRIVATE_KEY" not in os.environ,
     "raw_password_removed": "DEPLOY_BOOTSTRAP_PASSWORD" not in os.environ,
     "raw_bootstrap_sudo_removed": "DEPLOY_BOOTSTRAP_BECOME_PASSWORD" not in os.environ,
-    "has_bootstrap_hash": bool(os.environ.get("DEV_PASSWORD_HASH")),
+    "has_bootstrap_hash": bool(os.environ.get("SUDO_PASSWORD_HASH")),
     "has_become_password": bool(os.environ.get("ANSIBLE_BECOME_PASS")),
     "become_is_initial_login": os.environ.get("ANSIBLE_BECOME_PASS") == "test bootstrap password placeholder",
     "become_is_initial_sudo": os.environ.get("ANSIBLE_BECOME_PASS") == "test initial sudo password placeholder",
@@ -68,7 +68,7 @@ class DeploymentTests(unittest.TestCase):
             "DEPLOY_INVENTORY": "test inventory placeholder",
             "DEPLOY_KNOWN_HOSTS": "test host key placeholder",
             "DEPLOY_SSH_PRIVATE_KEY": "test private key placeholder",
-            "DEV_PASSWORD_HASH": "test hash placeholder",
+            "SUDO_PASSWORD_HASH": "test hash placeholder",
             "ANSIBLE_BECOME_PASS": "test password placeholder",
         }
 

@@ -1,6 +1,7 @@
 ---
 - name: Verify existing development access before choosing the setup path
   hosts: development
+  remote_user: "{{ dev_host_user }}"
   gather_facts: false
   become: true
   serial: 1
