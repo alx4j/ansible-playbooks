@@ -1,5 +1,5 @@
 name: Bootstrap dev server
-run-name: "Bootstrap dev server: ${{ inputs.mode }}"
+run-name: Bootstrap dev server
 
 on:
   workflow_dispatch:
@@ -17,14 +17,6 @@ on:
         description: Initial SSH and sudo password (first setup only; ordinary workflow input)
         type: string
         required: false
-      mode:
-        description: Preview changes (check) or make changes (apply)
-        type: choice
-        required: true
-        default: check
-        options:
-          - check
-          - apply
 
 permissions:
   contents: read

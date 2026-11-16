@@ -52,5 +52,3 @@ dev_host_moshi_manage_service: true
 # Only the recorded Mosh rule is managed by default. Enabling UFW is a
 # separate choice because the history does not establish its previous state.
 dev_host_enable_firewall: false
-dev_host_maintenance_autoremove: false
-dev_host_maintenance_reboot: false

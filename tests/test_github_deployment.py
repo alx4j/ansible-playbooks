@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -21,7 +22,7 @@ SPEC.loader.exec_module(DEPLOY)
 class GitHubDeploymentTests(unittest.TestCase):
     def setUp(self):
         self.event = {"inputs": {
-            "mode": "apply", "server_address": "192.0.2.10",
+            "server_address": "192.0.2.10",
             "bootstrap_user": "ubuntu", "bootstrap_password": "initial password placeholder",
         }}
         self.env = {
@@ -45,7 +46,6 @@ class GitHubDeploymentTests(unittest.TestCase):
             "dev_host_authorized_keys": ["ssh-ed25519 public-key-placeholder"],
         })
         self.assertEqual(env["DEPLOY_HOST"], "dev01")
-        self.assertEqual(env["DEPLOY_MODE"], "apply")
         self.assertEqual(env["ANSIBLE_BECOME_PASS"], self.env["DEV_PASSWORD"])
         for name in ("DEV_PASSWORD", "DOPPLER_TOKEN", "GITHUB_EVENT_PATH", "DEV_PASSWORD_HASH", "DEPLOY_BOOTSTRAP_PASSWORD"):
             self.assertNotIn(name, env)
@@ -89,7 +89,6 @@ class GitHubDeploymentTests(unittest.TestCase):
             "server_address": ["", "user@host", "host:22", "$(id)", "host\nother", "--help", [], "a" * 64, "host.."],
             "bootstrap_user": ["--help", "root; id", ["root"]],
             "bootstrap_password": [" padded ", "bad\0value", []],
-            "mode": ["--diff", []],
         }
         for name, values in cases.items():
             for value in values:
@@ -116,7 +115,7 @@ class GitHubDeploymentTests(unittest.TestCase):
 
 class SetupSequenceTests(unittest.TestCase):
     def setUp(self):
-        self.env = {"DEPLOY_MODE": "apply", "ANSIBLE_BECOME_PASS": "dev password placeholder"}
+        self.env = {"ANSIBLE_BECOME_PASS": "dev password placeholder"}
         self.output = io.StringIO()
         self.errors = io.StringIO()
         self.addCleanup(patch.stopall)
@@ -160,21 +159,6 @@ class SetupSequenceTests(unittest.TestCase):
                 self.assertEqual([call.args[1] for call in calls], ["access"])
         self.assertIn("probe diagnostics", self.errors.getvalue())
         self.hash.assert_not_called()
-
-    def test_new_server_check_mode_never_creates_access(self):
-        self.env["DEPLOY_MODE"] = "check"
-        status, calls = self.configure([4])
-        self.assertEqual(status, 4)
-        self.assertEqual(len(calls), 1)
-        self.assertIn("Use apply for first setup", self.errors.getvalue())
-        self.hash.assert_not_called()
-
-    def test_existing_server_check_mode_reaches_site_without_switching_mode(self):
-        self.env["DEPLOY_MODE"] = "check"
-        status, calls = self.configure([0, 0])
-        self.assertEqual(status, 0)
-        self.assertEqual([call.args[1] for call in calls], ["access", "site"])
-        self.assertTrue(all(call.args[0]["DEPLOY_MODE"] == "check" for call in calls))
 
     def test_bootstrap_failure_stops_before_configuration(self):
         status, calls = self.configure([4, 4])
@@ -221,15 +205,23 @@ class CredentialPreparationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 DEPLOY.password_hash(password)
 
-    def test_maintenance_runs_independently_and_preserves_exit_status(self):
+    def test_main_preserves_configuration_exit_status(self):
         with tempfile.TemporaryDirectory() as temporary:
             event = Path(temporary) / "event.json"
-            event.write_text("{}")
+            event.write_text('{"inputs": {}}')
             with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event)}, clear=True), \
                     patch.object(DEPLOY, "prepare_environment", return_value={"PATH": "/usr/bin"}), \
-                    patch.object(DEPLOY.subprocess, "run", return_value=subprocess.CompletedProcess([], 4)) as run:
-                self.assertEqual(DEPLOY.main(["--maintenance"]), 4)
-                self.assertEqual(run.call_args.kwargs["env"], {"PATH": "/usr/bin", "DEPLOY_PLAYBOOK": "maintenance"})
+                    patch.object(DEPLOY, "configure_server", return_value=4) as configure:
+                self.assertEqual(DEPLOY.main(), 4)
+                configure.assert_called_once_with({"PATH": "/usr/bin"}, "")
+
+    def test_removed_maintenance_argument_cannot_trigger_server_setup(self):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/github-deploy.py"), "--maintenance"],
+            env={}, text=True, capture_output=True, check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("accepts no command-line arguments", result.stderr)
 
 
 class WorkflowMaskingTests(unittest.TestCase):

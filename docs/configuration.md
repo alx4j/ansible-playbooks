@@ -13,7 +13,7 @@ dev_host_authorized_keys:
 
 Place that setting under `dev01`, beside `ansible_host` and `ansible_user`. Include the public half of the routine deployment key along with your workstation keys. The placeholder is not a usable key. Existing authorized keys and unrelated supplementary groups are preserved.
 
-Save the completed file as `inventories/local/hosts.yml`. GitHub Actions generates its one-host inventory from [workflow inputs and saved settings](github-deployment.md#1-configure-the-environment), using `dev` and the deployment key's public half. It does not read an `ANSIBLE_INVENTORY` variable. Keep shared defaults out of local copies so they follow repository updates. Existing Ansible inventory `group_vars` files remain supported for deliberate overrides.
+Save the completed file as `inventories/local/hosts.yml`. GitHub Actions generates its one-host inventory from [workflow inputs and saved settings](github-deployment.md#1-configure-the-environment), using `dev` and the deployment key's public half. Keep shared defaults out of local copies so they follow repository updates. Existing Ansible inventory `group_vars` files remain supported for deliberate overrides.
 
 Keep private connection details in the local inventory or GitHub settings. Keep passwords, hashes, tokens, private keys, and account files out of tracked files and inventory. `inventories/local/`, `private/`, environments, caches, and logs are ignored by Git.
 
@@ -41,8 +41,6 @@ All role inputs use the `dev_host_` prefix. The defaults file defines their curr
 | `dev_host_ssh_port` | Existing SSH port used by the firewall rule. Keep `ansible_port` consistent; this does not change sshd's listening port. |
 | `dev_host_enable_firewall` | Enable UFW after allowing SSH; disabled by default. |
 | `dev_host_automatic_reboot` | Allow unattended-update reboots; disabled by default. |
-| `dev_host_maintenance_autoremove` | Remove and purge unused dependencies during maintenance; disabled by default. |
-| `dev_host_maintenance_reboot` | Reboot during maintenance when `/var/run/reboot-required` exists; disabled by default. |
 | `dev_host_gradle_version`, `dev_host_codex_version`, `dev_host_moshi_version` | Override the pinned tool versions. |
 | `dev_host_codex_config_source` | Seed `.codex/config.toml` only if absent. The application and hook installer subsequently own it. |
 | `dev_host_codex_instructions_source` | Manage `.codex/AGENTS.md` from a supplied controller-side file. |

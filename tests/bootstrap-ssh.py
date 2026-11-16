@@ -44,7 +44,7 @@ def main():
         # fixture limits remote work to account tasks supported by containers.
         fixture[0]["vars"] = yaml.safe_load((source / "bootstrap.yml").read_text())[0]["vars"]
         (root / "bootstrap.yml").write_text(yaml.safe_dump(fixture, sort_keys=False))
-        shutil.copy2(source / "tests/fixtures/verify-access.yml", root / "site.yml")
+        shutil.copy2(source / "access.yml", root / "site.yml")
         (root / "ansible.cfg").write_text(f"[defaults]\nroles_path = {source / 'roles'}\n")
         runtime = root / "runtime"
         runtime.mkdir()
@@ -91,7 +91,7 @@ def main():
             }}}}}}
             env = {
                 **os.environ, "RUNNER_TEMP": str(runtime), "DEPLOY_PLAYBOOK": "bootstrap",
-                "DEPLOY_MODE": "apply", "DEPLOY_HOST": "dev01",
+                "DEPLOY_HOST": "dev01",
                 "DEPLOY_INVENTORY": json.dumps(inventory),
                 "DEPLOY_KNOWN_HOSTS": f"[127.0.0.1]:{port} {host_key}",
                 "DEPLOY_BOOTSTRAP_PASSWORD": password, "DEPLOY_SSH_PRIVATE_KEY": "",
@@ -140,7 +140,7 @@ def main():
             # Exercise the combined workflow from a missing dev account through
             # creation, a fresh key/sudo login, and automatic reuse on later runs.
             event = {"inputs": {
-                "mode": "check", "server_address": "127.0.0.1",
+                "server_address": "127.0.0.1",
                 "bootstrap_user": "initialadmin", "bootstrap_password": initial_password,
             }}
             event_file = root / "event.json"
@@ -150,16 +150,15 @@ def main():
                 "GITHUB_EVENT_PATH": str(event_file), "DEPLOY_SSH_PORT": str(port),
                 "DEPLOY_SSH_PRIVATE_KEY": private_key, "DEV_PASSWORD": dev_password,
             })
-            output = deploy(False, github=True)
-            assert "Use apply for first setup" in output, output
+            host.update({"ansible_user": "dev", "dev_host_user": "dev"})
+            output = deploy(False, DEPLOY_PLAYBOOK="access", DEPLOY_INVENTORY=json.dumps(inventory))
+            assert "Permission denied" in output, output
             try:
                 pwd.getpwnam("dev")
             except KeyError:
                 pass
             else:
-                raise AssertionError("Check mode created the development account")
-            event["inputs"]["mode"] = "apply"
-            event_file.write_text(json.dumps(event))
+                raise AssertionError("The access probe created the development account")
             output = deploy(False, github=True, DEPLOY_KNOWN_HOSTS=f"[127.0.0.1]:{port} {wrong_host_key}")
             assert "Please add this host's fingerprint to your known_hosts file" in output, output
             try:
@@ -180,10 +179,10 @@ def main():
             output = deploy(github=True)
             assert "Establishing development access" not in output, "Rerun used the initial administrator"
             assert "changed=0" in output, "Repeated configuration did not converge"
-            event["inputs"]["mode"] = "check"
+            event["inputs"] = {"server_address": "127.0.0.1"}
             event_file.write_text(json.dumps(event))
             deploy(github=True)
-            print("Root/sudo bootstrap, automatic key handoff, reruns, check mode, and rejected credentials passed")
+            print("Root/sudo bootstrap, read-only access probe, automatic key handoff, reruns, and rejected credentials passed")
         finally:
             server.terminate()
             try:
