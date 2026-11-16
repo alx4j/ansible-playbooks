@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 jobs:
-  validate:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +22,39 @@ jobs:
         run: scripts/setup
       - name: Run unit, lint, syntax, and inventory checks
         run: scripts/check
+
+  ssh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build the test image with cached dependencies
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: tests/Containerfile
+          load: true
+          tags: localhost/ansible-playbooks-test:local
+          cache-from: type=gha,scope=ansible-tests
+          cache-to: type=gha,mode=max,scope=ansible-tests
+
       - name: Test account convergence and SSH validation in a disposable container
         env:
           CONTAINER_ENGINE: docker
+          CONTAINER_TEST_IMAGE: localhost/ansible-playbooks-test:local
         run: scripts/test-container
+
+  validate:
+    if: ${{ always() }}
+    needs: [checks, ssh]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all verification jobs to pass
+        env:
+          CHECKS_RESULT: ${{ needs.checks.result }}
+          SSH_RESULT: ${{ needs.ssh.result }}
+        run: |
+          test "$CHECKS_RESULT" = success
+          test "$SSH_RESULT" = success

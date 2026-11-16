@@ -2,9 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 engine="${CONTAINER_ENGINE:-podman}"
-image="localhost/ansible-playbooks-test:local"
-"$engine" build -f tests/Containerfile -t "$image" .
-"$engine" run --rm \
+image="${CONTAINER_TEST_IMAGE:-localhost/ansible-playbooks-test:local}"
+if [[ -z "${CONTAINER_TEST_IMAGE:-}" ]]; then
+  "$engine" build -f tests/Containerfile -t "$image" .
+fi
+"$engine" run --rm --pull=never \
   -v "$PWD/roles:/work/roles:ro" \
   -v "$PWD/tests:/work/tests:ro" \
   -v "$PWD/scripts/deploy:/work/scripts/deploy:ro" \

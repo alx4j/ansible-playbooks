@@ -10,7 +10,7 @@ mkdir -p inventories/local
 cp -i inventories/example/hosts.yml inventories/local/hosts.yml
 ```
 
-`scripts/setup` creates `.venv` and installs the pinned Python dependencies and Ansible collections. All GitHub workflows use this same setup command.
+`scripts/setup` creates `.venv` and installs the pinned Python dependencies and Ansible collections. CI checks and the deployment workflow use the same setup command; container tests install their dependencies in the test image.
 
 Edit the local inventory using the [configuration guide](configuration.md#inventory-and-shared-defaults). Establish trust in the server's SSH host key before connecting; host-key checking remains enabled.
 
@@ -57,7 +57,9 @@ Deployment-runner unit tests check target selection, password/key selection, cre
 
 Container tests use Podman by default; set `CONTAINER_ENGINE=docker` to use Docker. They build a disposable Debian 13 image and download upstream packages. No production credentials are mounted or pairing performed. Containers are removed; the test image remains cached.
 
-CI runs `scripts/check`, the focused account/SSH container tests, and actionlint on pull requests and pushes to `main`, avoiding duplicate checks for each PR update. The actionlint version is pinned in [the validation workflow](../.github/workflows/validate.yml); its [official image](https://github.com/rhysd/actionlint/blob/v1.7.12/docs/usage.md#docker) includes ShellCheck and Pyflakes. To check workflows locally with that image:
+CI runs checks and the focused account/SSH tests in parallel on pull requests and pushes to `main`. The final `validate` check requires both jobs to pass. GitHub Actions caches the test image's dependency layers; every run mounts the current source and executes all tests. CI passes the built image through `CONTAINER_TEST_IMAGE`; leave it unset locally to build the image automatically.
+
+The actionlint version is pinned in [the validation workflow](../.github/workflows/validate.yml); its [official image](https://github.com/rhysd/actionlint/blob/v1.7.12/docs/usage.md#docker) includes ShellCheck and Pyflakes. To check workflows locally with that image:
 
 ```bash
 podman run --rm -v "$PWD:/repo:ro" --workdir /repo docker.io/rhysd/actionlint:1.7.12
