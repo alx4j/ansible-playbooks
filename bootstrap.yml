@@ -1,11 +1,11 @@
 ---
-- name: Establish development access as root
+- name: Establish development access through the initial administrator
   hosts: development
   gather_facts: true
   serial: 1
   vars:
-    ansible_user: root
-    ansible_become: false
+    ansible_user: "{{ dev_host_bootstrap_user | default('root') }}"
+    ansible_become: "{{ (dev_host_bootstrap_user | default('root')) != 'root' }}"
   tasks:
     - name: Bootstrap the account and sudo access
       ansible.builtin.import_role:
