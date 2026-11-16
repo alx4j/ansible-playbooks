@@ -84,8 +84,15 @@ def load_inventory():
     if result.returncode:
         raise ValueError("Could not resolve the development inventory.")
     inventory = json.loads(result.stdout)
-    if not isinstance(inventory, dict) or "development" not in inventory:
+    if not isinstance(inventory, dict):
         raise ValueError("The inventory must define the development group.")
+    if "development" not in inventory:
+        # Ansible omits empty groups but keeps their names in parent children.
+        declared = any("development" in group.get("children", [])
+                       for name, group in inventory.items() if name != "_meta" and isinstance(group, dict))
+        if not declared:
+            raise ValueError("The inventory must define the development group.")
+        inventory["development"] = {}
     return inventory
 
 
@@ -115,8 +122,8 @@ def development_hosts(inventory):
         group = pending.pop()
         if group not in visited:
             visited.add(group)
-            hosts.update(inventory[group].get("hosts", []))
-            pending.extend(inventory[group].get("children", []))
+            hosts.update(inventory.get(group, {}).get("hosts", []))
+            pending.extend(inventory.get(group, {}).get("children", []))
     return sorted(hosts)
 
 
@@ -224,7 +231,12 @@ def update_inventory(environment):
     inventory = load_inventory()
     names = development_hosts(inventory)
     if not names:
-        raise ValueError("The development inventory contains no servers.")
+        message = "No enabled servers in the development inventory; nothing to configure."
+        print(f"::notice::{message}", flush=True)
+        if environment.get("GITHUB_STEP_SUMMARY"):
+            with open(environment["GITHUB_STEP_SUMMARY"], "a") as report:
+                report.write(message + "\n")
+        return 0
     hostvars = inventory.get("_meta", {}).get("hostvars", {})
     # Validate all targets and required settings before changing any server.
     targets = [(name, prepare_inventory_environment(name, hostvars.get(name, {}), environment)) for name in names]

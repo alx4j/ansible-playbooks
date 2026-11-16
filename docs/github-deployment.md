@@ -20,7 +20,7 @@ These account and key settings are shared across the inventory. GitHub maps `SUD
 
 Choose `SUDO_PASSWORD` for a new account, or supply its current password when the account already exists. Changing the secret does not rotate existing passwords. Use a single-line value of at most 256 UTF-8 bytes.
 
-The [development inventory](../inventories/development/hosts.yml) contains server names and a shared reference to `SUDO_USER`, with optional addresses, ports, and role settings. Add another server under `development.hosts`; no bootstrap username or per-server password secret is stored there. Existing `BOOTSTRAP_*_PASSWORD` secrets are unused and may be deleted.
+The [development inventory](../inventories/development/hosts.yml) contains server names and a shared reference to `SUDO_USER`, with optional addresses, ports, and role settings. Add another server under `development.hosts`; no bootstrap username or per-server password secret is stored there. Existing `BOOTSTRAP_*_PASSWORD` secrets are unused and may be deleted. All hosts are currently commented out. To enable a host, change `hosts: {}` to `hosts:` and uncomment its entry. With no enabled hosts, automatic runs report that there is nothing to configure and make no connections.
 
 Obtain each SSH host key through a trusted channel such as the provider console. The entry must match the connection address, including an `ansible_host` override. For a nondefault port, use `[hostname]:port` in `known_hosts`. An unverified `ssh-keyscan` result does not establish trust. The runner must be able to reach each server's SSH port.
 

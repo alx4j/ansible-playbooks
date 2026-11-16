@@ -123,6 +123,21 @@ class GitHubDeploymentTests(unittest.TestCase):
                 DEPLOY.prepare_environment(event, self.env)
 
 
+class InventoryLoadingTests(unittest.TestCase):
+    def test_explicit_empty_development_group_is_preserved(self):
+        resolved = {"_meta": {"hostvars": {}}, "all": {"children": ["ungrouped", "development"]}}
+        result = subprocess.CompletedProcess([], 0, json.dumps(resolved), "")
+        with patch.object(DEPLOY.subprocess, "run", return_value=result):
+            inventory = DEPLOY.load_inventory()
+        self.assertEqual(DEPLOY.development_hosts(inventory), [])
+
+    def test_missing_development_group_is_still_an_error(self):
+        resolved = {"_meta": {"hostvars": {}}, "all": {"children": ["ungrouped"]}}
+        result = subprocess.CompletedProcess([], 0, json.dumps(resolved), "")
+        with patch.object(DEPLOY.subprocess, "run", return_value=result), self.assertRaisesRegex(ValueError, "must define"):
+            DEPLOY.load_inventory()
+
+
 class InventoryTargetTests(unittest.TestCase):
     def test_registered_alias_resolves_address_and_unlisted_server_is_allowed(self):
         inventory = {
@@ -262,14 +277,24 @@ class InventoryUpdateTests(unittest.TestCase):
                 variables.clear()
                 variables.update(previous)
 
-    def test_missing_credentials_and_empty_inventory_fail_before_any_connection(self):
+    def test_missing_credentials_fail_before_any_connection(self):
         for name in ("SUDO_PASSWORD", "DEPLOY_SUDO_USER", "DEPLOY_KNOWN_HOSTS", "DEPLOY_SSH_PRIVATE_KEY"):
             with self.subTest(name=name), patch.object(DEPLOY, "run_playbook") as run, self.assertRaises(ValueError):
                 DEPLOY.update_inventory({**self.env, name: ""})
             run.assert_not_called()
+
+    def test_empty_inventory_reports_no_work_without_loading_credentials_or_connecting(self):
         self.inventory["development"]["hosts"] = []
-        with self.assertRaisesRegex(ValueError, "contains no servers"):
-            DEPLOY.update_inventory(self.env)
+        with tempfile.TemporaryDirectory() as temporary:
+            summary = Path(temporary) / "summary.md"
+            with patch.object(DEPLOY, "prepare_inventory_environment") as prepare, \
+                    patch.object(DEPLOY, "run_playbook") as run:
+                status = DEPLOY.update_inventory({"GITHUB_STEP_SUMMARY": str(summary)})
+            self.assertEqual(status, 0)
+            prepare.assert_not_called()
+            run.assert_not_called()
+            self.assertIn("No enabled servers", summary.read_text())
+        self.assertIn("::notice::", self.output.getvalue())
 
     def test_child_groups_are_included_once_and_unrelated_hosts_are_excluded(self):
         self.inventory["development"] = {"hosts": ["first.example.com"], "children": ["region"]}
