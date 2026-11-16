@@ -24,6 +24,8 @@ result = {
     "password_matches": password is not None and password.read_text() == "test bootstrap password placeholder",
     "password_mechanism": os.environ.get("ANSIBLE_SSH_PASSWORD_MECHANISM"),
     "directory_private": inventory.parent.stat().st_mode & 0o777 == 0o700,
+    "control_directory_private": pathlib.Path(os.environ["ANSIBLE_SSH_CONTROL_PATH_DIR"]).stat().st_mode & 0o777 == 0o700,
+    "control_directory_isolated": pathlib.Path(os.environ["ANSIBLE_SSH_CONTROL_PATH_DIR"]).parent == inventory.parent,
     "raw_key_removed": "DEPLOY_SSH_PRIVATE_KEY" not in os.environ,
     "raw_password_removed": "DEPLOY_BOOTSTRAP_PASSWORD" not in os.environ,
     "raw_bootstrap_sudo_removed": "DEPLOY_BOOTSTRAP_BECOME_PASSWORD" not in os.environ,
@@ -89,7 +91,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(len(calls), 3)
         self.assertIn("--check", calls[-1]["args"])
         for call in calls:
-            for key in ["inventory_private", "key_private", "directory_private", "raw_key_removed", "has_become_password"]:
+            for key in ["inventory_private", "key_private", "directory_private", "control_directory_private", "control_directory_isolated", "raw_key_removed", "has_become_password"]:
                 self.assertTrue(call[key])
             self.assertFalse(call["has_bootstrap_hash"])
             self.assertEqual(call["host_key_checking"], "True")

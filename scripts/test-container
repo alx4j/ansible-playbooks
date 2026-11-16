@@ -10,6 +10,7 @@ image="localhost/ansible-playbooks-test:local"
   -v "$PWD/scripts/deploy:/work/scripts/deploy:ro" \
   -v "$PWD/scripts/github-deploy.py:/work/scripts/github-deploy.py:ro" \
   -v "$PWD/bootstrap.yml:/work/bootstrap.yml:ro" \
+  -v "$PWD/access.yml:/work/access.yml:ro" \
   -v "$PWD/ansible.cfg:/work/ansible.cfg:ro" \
   -e ANSIBLE_COLLECTIONS_PATH=/opt/collections \
   -e ANSIBLE_LOCAL_TEMP=/tmp/ansible-local \

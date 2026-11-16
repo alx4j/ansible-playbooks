@@ -6,15 +6,18 @@ The managed host needs Debian/Ubuntu, Python 3, OpenSSH, APT, and systemd. The c
 
 ## Deploy through GitHub Actions
 
-1. Merge the workflow into the default branch.
+1. Merge the workflows into the default branch.
 2. Follow [deployment setup](docs/github-deployment.md#1-configure-the-environment) to save the deployment private key, `DEV_PASSWORD`, and trusted host keys in the `development` GitHub environment. No inventory YAML is needed in GitHub.
-3. For a new host, [bootstrap the development account](docs/github-deployment.md#2-establish-access) by entering the server address, initial administrator username, and password in the run form. The password is an ordinary workflow input with log masking. Skip bootstrap if `dev` already has working SSH and sudo access.
-4. Run **Actions → Deploy Ansible manually → Run workflow**, selecting the default branch, server address, `site`, and `check`. The workflow always uses the `development` environment.
-5. Review the result, then run again with `apply`. Check mode connects to the host and is a partial simulation; see [its limitations](docs/github-deployment.md#3-check-review-and-apply).
+3. Open **Actions → Bootstrap dev server → Run workflow**. For a new host, enter the server address, initial administrator username, and password, then select `apply`. One run creates `dev`, verifies its key and sudo access, and configures the server. The initial password is an ordinary workflow input with log masking.
+4. For later runs, enter the server address and leave the initial credentials blank. The workflow reuses working `dev` access. Use `check` to preview changes or `apply` to make them; see [check-mode limitations](docs/github-deployment.md#3-check-review-and-apply).
+
+Both server workflows use the `development` environment. Use **Maintain dev server** separately to upgrade installed packages.
 
 Deployments are manual. Pushes and pull requests run validation only. Keep provider-console access available when changing SSH or sudo.
 
-## Playbooks
+## Local playbooks
+
+The setup workflow runs these stages automatically. They are also available for [local runs](docs/development.md#bootstrap-and-apply).
 
 | Playbook | Purpose |
 | --- | --- |

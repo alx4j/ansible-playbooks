@@ -10,8 +10,8 @@ fail() {
 }
 
 case "${DEPLOY_PLAYBOOK:-}" in
-  bootstrap|site|maintenance) ;;
-  *) fail 'Select bootstrap, site, or maintenance.' ;;
+  access|bootstrap|site|maintenance) ;;
+  *) fail 'Select access, bootstrap, site, or maintenance.' ;;
 esac
 case "${DEPLOY_MODE:-}" in
   check|apply) ;;
@@ -48,6 +48,10 @@ ssh-keygen -l -f "$deployment_dir/known_hosts" > /dev/null 2>&1 \
 export ANSIBLE_HOST_KEY_CHECKING=True
 export ANSIBLE_NOCOLOR=True
 export ANSIBLE_RETRY_FILES_ENABLED=False
+
+# A previous connection must not bypass this stage's credentials or host keys.
+mkdir "$deployment_dir/control"
+export ANSIBLE_SSH_CONTROL_PATH_DIR="$deployment_dir/control"
 
 ssh_options="-o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
 ssh_options+=" -o UserKnownHostsFile=\"$deployment_dir/known_hosts\""

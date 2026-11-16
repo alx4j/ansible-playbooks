@@ -1,29 +1,20 @@
-name: Deploy Ansible manually
-run-name: "${{ inputs.mode }} ${{ inputs.playbook }} (development)"
+name: Bootstrap dev server
+run-name: "Bootstrap dev server: ${{ inputs.mode }}"
 
 on:
   workflow_dispatch:
     inputs:
-      playbook:
-        description: "Task: bootstrap creates dev; site configures the server; maintenance updates packages"
-        type: choice
-        required: true
-        default: site
-        options:
-          - site
-          - bootstrap
-          - maintenance
       server_address:
         description: Server IP address or hostname
         type: string
         required: true
       bootstrap_user:
-        description: Existing administrator account (bootstrap only)
+        description: Initial administrator account (first setup only)
         type: string
         required: false
         default: root
       bootstrap_password:
-        description: Initial SSH and sudo password (bootstrap only; ordinary workflow input)
+        description: Initial SSH and sudo password (first setup only; ordinary workflow input)
         type: string
         required: false
       mode:
@@ -76,7 +67,7 @@ jobs:
         run: scripts/setup
       - name: Validate the checked-out playbooks
         run: scripts/check
-      - name: Run the selected playbook
+      - name: Bootstrap and configure the development server
         env:
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
