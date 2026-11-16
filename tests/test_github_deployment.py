@@ -21,7 +21,7 @@ SPEC.loader.exec_module(DEPLOY)
 class GitHubDeploymentTests(unittest.TestCase):
     def setUp(self):
         self.event = {"inputs": {
-            "mode": "apply", "server_address": "192.0.2.10",
+            "server_address": "192.0.2.10",
             "bootstrap_user": "ubuntu", "bootstrap_password": "initial password placeholder",
         }}
         self.env = {

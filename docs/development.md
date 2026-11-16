@@ -31,7 +31,7 @@ Review the selected hosts and predict routine changes:
 .venv/bin/ansible-playbook -i inventories/local/hosts.yml site.yml --limit dev01 --check --ask-become-pass
 ```
 
-Check mode is a partial simulation: read-only probes run, while simulated installations may leave later tasks without required files or commands. See [check-mode limitations](github-deployment.md#3-check-review-and-apply). Review failures before applying:
+Local check mode is a partial simulation: read-only probes run, while simulated installations may leave later tasks without required files or commands. Investigate failures; check mode is not proof that apply will succeed, and checks must not be disabled to accommodate it. Review failures before applying:
 
 ```bash
 .venv/bin/ansible-playbook -i inventories/local/hosts.yml site.yml --limit dev01 --ask-become-pass

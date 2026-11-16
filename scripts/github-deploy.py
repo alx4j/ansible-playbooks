@@ -43,7 +43,7 @@ def prepare_environment(event, environment):
     if not isinstance(event, dict) or not isinstance(event.get("inputs"), dict):
         raise ValueError("The workflow event must contain deployment inputs.")
     inputs = event.get("inputs", {})
-    mode = inputs.get("mode", "")
+    mode = inputs.get("mode", "apply")
     if mode not in ("check", "apply"):
         raise ValueError("Select check or apply mode.")
 

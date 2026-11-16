@@ -158,7 +158,8 @@ def main():
                 pass
             else:
                 raise AssertionError("Check mode created the development account")
-            event["inputs"]["mode"] = "apply"
+            # The setup form has no mode selector; its normal run must apply.
+            del event["inputs"]["mode"]
             event_file.write_text(json.dumps(event))
             output = deploy(False, github=True, DEPLOY_KNOWN_HOSTS=f"[127.0.0.1]:{port} {wrong_host_key}")
             assert "Please add this host's fingerprint to your known_hosts file" in output, output
