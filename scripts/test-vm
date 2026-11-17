@@ -19,6 +19,11 @@ trap 'rm -rf -- "$vm_dir"' EXIT
 
 sudo apt-get update -qq
 sudo apt-get install -y --no-install-recommends openssh-server sudo acl
+# Hosted images set per-user XDG paths globally, including for SSH logins.
+# Restore normal per-user defaults on this disposable VM before creating accounts.
+# https://github.com/actions/runner-images/issues/14649
+sudo sed -i '/^XDG_CONFIG_HOME=/d; /^XDG_RUNTIME_DIR=/d' /etc/environment
+unset XDG_CONFIG_HOME XDG_RUNTIME_DIR
 sudo useradd -m -s /bin/bash ansibleinitial
 printf '%s\n' 'ansibleinitial ALL=(ALL:ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/ansibleinitial-test > /dev/null
 sudo chmod 0440 /etc/sudoers.d/ansibleinitial-test
