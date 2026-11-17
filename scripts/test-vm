@@ -73,7 +73,7 @@ run_tool_test tests/java-shell.py
 run_tool_test tests/toolchain-shell.py
 sudo env "PATH=$PATH" python3 tests/vm-state.py | tee "$vm_dir/state-after.json" > /dev/null
 if ! diff -u "$vm_dir/state-before.json" "$vm_dir/state-after.json"; then
-  sudo journalctl -u doppler-secrets.service --lines=40 --no-pager
+  sudo journalctl -u doppler-secrets.service -u apt-daily.service -u apt-daily-upgrade.service --lines=60 --no-pager
   exit 1
 fi
 
