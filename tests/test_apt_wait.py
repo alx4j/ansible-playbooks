@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location("wait_apt", Path(__file__).with_name("wait-apt.py"))
@@ -18,6 +19,15 @@ class AptCompletionTests(unittest.TestCase):
     def test_waits_for_running_or_queued_jobs(self):
         self.assertFalse(wait_apt.completed(self.status(active="activating")))
         self.assertFalse(wait_apt.completed(self.status(job="42")))
+
+    def test_timeout_reports_the_pending_units(self):
+        state = self.status(active="activating", job="42")
+        result = wait_apt.subprocess.CompletedProcess([], 0, stdout=state)
+        with patch.object(wait_apt.subprocess, "run", return_value=result), \
+                patch.object(wait_apt.time, "monotonic", side_effect=[0, 600]), \
+                self.assertRaises(AssertionError) as raised:
+            wait_apt.main()
+        self.assertIn(state, str(raised.exception))
 
     def test_requires_successful_completion_of_both_units(self):
         self.assertTrue(wait_apt.completed(self.status()))
