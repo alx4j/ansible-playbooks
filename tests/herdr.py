@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import pwd
 import shlex
+import shutil
 import socket
 import struct
 import subprocess
@@ -40,14 +41,20 @@ if mode == ["--cleanup"]:
 if mode == ["--prepare"]:
     assert not any(item["name"] == session for item in sessions()), "Fixture session already exists"
     context_file.unlink(missing_ok=True)
+    launch = [herdr, "--session", session, "server"]
+    trace = home / ".herdr-startup-trace.log"
+    if shutil.which("strace"):
+        launch = ["strace", "-f", "-e", "trace=file", "-o", str(trace), *launch]
     with (home / ".herdr-test.log").open("w") as log:
-        process = subprocess.Popen([herdr, "--session", session, "server"], cwd=home,
+        process = subprocess.Popen(launch, cwd=home,
                                    stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                    env=dict(os.environ, HOME=str(home), SHELL=account.pw_shell,
                                             PATH=str(home / ".local/bin") + ":/usr/local/bin:/usr/bin:/bin"),
                                    start_new_session=True)
     for _ in range(40):
         if process.poll() is not None:
+            if trace.exists():
+                print("\n".join(line for line in trace.read_text().splitlines() if "EACCES" in line or "EPERM" in line))
             raise AssertionError(f"Herdr exited ({process.returncode}):\n{(home / '.herdr-test.log').read_text()}")
         if any(item["name"] == session and item["running"] for item in sessions()):
             break
