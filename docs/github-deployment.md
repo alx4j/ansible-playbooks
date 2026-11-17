@@ -1,6 +1,6 @@
 # Bootstrap VPS from GitHub Actions
 
-**Bootstrap VPS** handles first setup manually and applies later configuration changes automatically after `main` passes validation. Pull requests run tests without contacting servers.
+**Bootstrap VPS** handles first setup manually and applies later configuration changes automatically after `main` passes validation. Pull requests run tests without contacting inventory servers.
 
 ## 1. Configure the environment
 
@@ -43,7 +43,7 @@ The initial administrator must already have sudo access. If its SSH and sudo pas
 
 The manual run first checks development-account key and sudo access. If that connection is unavailable, it uses the initial administrator to create the configured account, grant sudo, and install the public key. It then reconnects through the development account and applies `site.yml`. Incorrect initial credentials fail the manual run. An existing development account with failing sudo also fails without attempting bootstrap.
 
-Manual runs select one server. Host patterns, shell options, and multiple targets are rejected. All connections enforce the saved host keys. Keep provider-console access available for recovery.
+Manual runs select one server. A registered alias or address uses that host's inventory port and configuration overrides, just as automatic runs do. Unlisted addresses use the shared defaults. Initial credentials always come from the form. Host patterns, shell options, and multiple targets are rejected. All connections enforce the saved host keys. Keep provider-console access available for recovery.
 
 ## 3. Apply later changes
 

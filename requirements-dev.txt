@@ -1,2 +1,2 @@
-ansible-core==2.19.15
+-r requirements.txt
 ansible-lint==25.12.2

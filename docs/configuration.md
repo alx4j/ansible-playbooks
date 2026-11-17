@@ -19,7 +19,25 @@ Place that setting under `development.vars` to share keys across the group, or u
 
 Initial usernames and passwords are entered in the manual GitHub form. They are not stored in the inventory or in per-server GitHub secrets. Automatic runs only use existing development-account access.
 
-Save local overrides as `inventories/local/hosts.yml`. Automatic GitHub runs read the tracked inventory, including host/group role settings and an optional `ansible_port`, then generate a one-host inventory for each server. GitHub's configured account and deployment key take precedence. Manual GitHub runs use the selected address, shared role defaults, and saved GitHub connection settings. Keep shared defaults out of local copies so they follow repository updates. Ansible inventory `group_vars` files remain supported for deliberate overrides.
+Save local overrides as `inventories/local/hosts.yml`. Both manual and automatic GitHub runs preserve the selected inventory host's settings, including `ansible_port` and tool/project overrides. GitHub's configured development account and deployment key take precedence. An unlisted manual target uses shared role defaults and GitHub connection settings. Bootstrap credentials come only from the manual form. Keep shared defaults out of local copies so they follow repository updates. Ansible inventory `group_vars` files remain supported for deliberate overrides.
+
+For example, this complete inventory selects an existing SSH port and a different projects folder for one server. Replace the address and public-key placeholder before using it; the playbook does not change the server's listening port.
+
+```yaml
+all:
+  children:
+    development:
+      vars:
+        sudo_user: "{{ lookup('ansible.builtin.env', 'DEPLOY_SUDO_USER', default=undef()) }}"
+        dev_host_authorized_keys:
+          - "ssh-ed25519 REPLACE_WITH_YOUR_PUBLIC_KEY workstation"
+      hosts:
+        dev01:
+          ansible_host: 192.0.2.10
+          ansible_port: 2222
+          dev_host_ssh_port: 2222
+          dev_host_projects_dir: code
+```
 
 Keep private connection details in the local inventory or GitHub settings. Keep passwords, hashes, tokens, private keys, and account files out of tracked files and inventory. `inventories/local/`, `private/`, environments, caches, and logs are ignored by Git.
 
@@ -68,9 +86,9 @@ The `site` play verifies development-user login and sudo before making SSH restr
 - A combined APT package set, including Podman, Mosh, UFW, Git, tmux, and `acl` for switching to the unprivileged tool owner. Package presence is managed, not exact APT revisions.
 - The development account and approved keys, and an empty `/etc/motd` to suppress the static login message.
 - Daily unattended updates and APT timers, preserving the distribution's allowed-origin policy. Routine runs do not upgrade all packages or purge dependencies.
-- Zulu Java and Gradle through SDKMAN, Go from verified official archives, and Rust/Cargo through rustup, all under the development account. jenv selects Java. One shared shell environment is loaded from `.profile` and `.bashrc`.
+- Zulu Java and Gradle through SDKMAN, Go from verified official archives, and Rust/Cargo through rustup, all under the development account. jenv selects Java. One shared shell environment is loaded from `.profile`, `.bashrc`, and any existing `.bash_profile` or `.bash_login`. Existing login customization is preserved.
 - A private projects directory under the user's home. Existing contents are preserved; changing the configured name creates the new directory and leaves the old one in place.
-- Codex, Moshi, and Codex hooks, with actual installed-version checks. User lingering and `moshi-hook.service` keep the hook daemon running. An unpaired daemon does not establish a working phone connection.
+- Codex, Moshi, and Codex hooks, with actual installed-version checks. User lingering and `moshi-hook.service` keep the hook daemon running, with its socket in the development account's runtime directory. An unpaired daemon does not establish a working phone connection.
 - The Mosh UDP rule for `60000:61000`. UFW activation and its default policy remain unchanged unless firewall activation is explicitly enabled.
 - `PermitRootLogin no`, `PasswordAuthentication no`, and `KbdInteractiveAuthentication no`. The SSH validator expands the main configuration's Includes and checks syntax and effective global values before replacing the drop-in. Handlers validate and reload; a fresh connection then verifies login and sudo. Review Match-specific policies for relevant client contexts.
 
@@ -99,7 +117,7 @@ Ansible tool commands use an explicit `dev_host_java_home` derived from the pinn
 
 New Bash login and interactive shells can run `java`, `javac`, `gradle`, `go`, `rustc`, and `cargo` directly. The shared environment also adds `~/go/bin` and `~/.cargo/bin` for tools installed with `go install` and `cargo install`.
 
-Go is extracted into `~/.local/share/go/<version>/go`; a `current` symlink selects the managed release. The shell sets `GOTOOLCHAIN=local` so Go uses that release and reports when a project requires a newer compiler. Upgrade the pinned version and both archive checksums together. Old version directories are retained.
+Go is extracted and compiled against its standard library in a staging directory before moving into `~/.local/share/go/<version>/go`. A completion record identifies the verified archive, and a `current` symlink selects the managed release. Interrupted installs are retried even if a Go executable already exists. The shell sets `GOTOOLCHAIN=local` so Go uses that release and reports when a project requires a newer compiler. Upgrade the pinned version and both archive checksums together. Old version directories are retained.
 
 Rustup installs a pinned minimal toolchain containing the compiler, standard library, and Cargo. `build-essential` supplies the native linker used by Cargo and Go's cgo support. Ansible manages the default toolchain and disables rustup's automatic self-update; existing toolchains, project `rust-toolchain.toml` files, and rustup overrides are preserved.
 
@@ -127,6 +145,8 @@ cd "$PROJECTS_DIR"
 ## Versions and updates
 
 Tool versions and installer checksums live in [role defaults](../roles/dev_host/defaults/main.yml). Codex and SDKMAN installer downloads use reviewed SHA-256 pins; a changed upstream script fails verification until its new content and checksum are reviewed. An existing SDKMAN installation is preserved rather than forcibly downgraded.
+
+Follow the [update procedure](updates.md) when changing pins or reviewing Dependabot PRs.
 
 Java and Gradle use SDKMAN checksum validation, jenv is pinned to a release commit, Go archives and the rustup installer use reviewed SHA-256 pins, and rustup verifies its toolchain downloads. Codex's installer verifies release assets, and Moshi requires a release checksum manifest. Broken installations fail visibly. Review CLI compatibility when changing versions, particularly Moshi's JSON hook diagnostics.
 

@@ -13,15 +13,24 @@
   vars:
     dev_host_go_architecture: "{{ dev_host_go_architectures[ansible_facts['architecture']] }}"
     dev_host_go_directory: "{{ dev_host_home }}/.local/share/go/{{ dev_host_go_version }}"
+    dev_host_go_staging: "{{ dev_host_go_directory }}.staging"
     dev_host_go_archive: "go{{ dev_host_go_version }}.linux-{{ dev_host_go_architecture }}.tar.gz"
   block:
-    - name: Check the selected Go binary
+    - name: Check whether Go extraction and verification completed
       ansible.builtin.stat:
-        path: "{{ dev_host_go_directory }}/go/bin/go"
-      register: dev_host_go_binary
+        path: "{{ dev_host_go_directory }}/.ansible-complete"
+      register: dev_host_go_complete
 
-    - name: Install the missing Go release from its verified archive
-      when: not dev_host_go_binary.stat.exists
+    - name: Read the installed Go archive checksum
+      when: dev_host_go_complete.stat.exists
+      ansible.builtin.slurp:
+        src: "{{ dev_host_go_directory }}/.ansible-complete"
+      register: dev_host_go_installed_checksum
+
+    - name: Install the missing or incomplete Go release
+      when: >-
+        (dev_host_go_installed_checksum.content | default('') | b64decode | trim) !=
+        dev_host_go_checksums[dev_host_go_architecture]
       block:
         - name: Download the checksum-verified Go archive
           ansible.builtin.get_url:
@@ -30,24 +39,50 @@
             checksum: "sha256:{{ dev_host_go_checksums[dev_host_go_architecture] }}"
             mode: "0600"
 
-        # Go requires extraction into a clean tree, including after an interrupted install.
-        - name: Remove an incomplete Go extraction directory
+        - name: Remove an interrupted Go staging directory
           ansible.builtin.file:
-            path: "{{ dev_host_go_directory }}"
+            path: "{{ dev_host_go_staging }}"
             state: absent
 
-        - name: Create the versioned Go extraction directory
+        - name: Create a clean Go staging directory
           ansible.builtin.file:
-            path: "{{ dev_host_go_directory }}"
+            path: "{{ dev_host_go_staging }}"
             state: directory
             mode: "0700"
 
         - name: Extract the verified Go release
           ansible.builtin.unarchive:
             src: "{{ dev_host_home }}/.cache/ansible-installers/{{ dev_host_go_archive }}"
-            dest: "{{ dev_host_go_directory }}"
+            dest: "{{ dev_host_go_staging }}"
             remote_src: true
-            creates: "{{ dev_host_go_directory }}/go/bin/go"
+
+        - name: Verify the staged Go compiler and standard library can build
+          ansible.builtin.command:
+            argv:
+              - "{{ dev_host_go_staging }}/go/bin/go"
+              - build
+              - fmt
+            chdir: "{{ dev_host_go_staging }}"
+          changed_when: true
+
+        - name: Record the successfully installed archive checksum
+          ansible.builtin.copy:
+            dest: "{{ dev_host_go_staging }}/.ansible-complete"
+            content: "{{ dev_host_go_checksums[dev_host_go_architecture] }}\n"
+            mode: "0600"
+
+        - name: Remove the incomplete destination after staging succeeds
+          ansible.builtin.file:
+            path: "{{ dev_host_go_directory }}"
+            state: absent
+
+        - name: Promote the completed Go installation
+          ansible.builtin.command:
+            argv:
+              - mv
+              - "{{ dev_host_go_staging }}"
+              - "{{ dev_host_go_directory }}"
+          changed_when: true
 
     - name: Verify the selected Go toolchain
       ansible.builtin.command:

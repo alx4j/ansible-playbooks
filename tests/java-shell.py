@@ -52,6 +52,9 @@ def main():
         assert result.returncode == 0, result.stdout + result.stderr
         return result.stdout
 
+    assert "export ANSIBLE_TEST_LOGIN_MARKER=preserved" in (home / ".bash_profile").read_text()
+    shell('test "$ANSIBLE_TEST_LOGIN_MARKER" = preserved', "--login")
+
     # Login and non-login interactive shells must initialize Java immediately.
     # Sourcing the common environment again must not duplicate PATH entries.
     selected = f'''
