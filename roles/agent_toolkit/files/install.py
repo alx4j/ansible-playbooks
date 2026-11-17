@@ -63,6 +63,7 @@ def fingerprint(directory):
             raise ToolkitError("Plugin packages must contain regular files, not symlinks.")
         if path.is_file():
             digest.update(str(relative).encode() + b"\0")
+            digest.update(str(path.stat().st_mode & 0o111).encode() + b"\0")
             digest.update(path.read_bytes())
     return digest.hexdigest()
 

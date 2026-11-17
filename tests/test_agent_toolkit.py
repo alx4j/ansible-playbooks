@@ -97,6 +97,15 @@ class ToolkitTests(unittest.TestCase):
         shutil.rmtree(self.cache("infrastructure"))
         self.assertEqual(self.install()["installed"], ["infrastructure"])
 
+    def test_executable_permission_changes_refresh_the_package(self):
+        script = self.checkout / "plugins/common/tool.sh"
+        script.write_text("#!/bin/sh\nexit 0\n")
+        self.install()
+        script.chmod(0o755)
+        self.assertEqual(self.install()["installed"], ["common"])
+        self.assertTrue((self.cache() / "tool.sh").stat().st_mode & 0o111)
+        self.assertFalse(self.install()["changed"])
+
     def test_version_bump_installs_the_new_package(self):
         self.install()
         for path in (self.checkout / "plugins/common").glob("**/plugin.json"):
