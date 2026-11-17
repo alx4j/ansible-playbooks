@@ -16,6 +16,7 @@ Save these settings once:
 | `ANSIBLE_KNOWN_HOSTS` | Variable | Independently verified OpenSSH host-key entries for every managed server. |
 | `ANSIBLE_SSH_PORT` | Optional variable | Existing SSH port; defaults to `22`. This does not change the server's listening port. |
 | `PROJECTS_DIR` | Optional variable | Projects folder name inside the development user's home, such as `code`; defaults to `projects`. |
+| `PROJECTS_TOPIC` | Optional variable | GitHub topic used to select repositories to synchronize; defaults to `work`. |
 | `DOPPLER_TOKEN` | Optional secret | Read-only Doppler Service Token; enables encrypted credential storage and the local secret service for Codex skills. |
 
 These account and key settings are shared across the inventory. GitHub maps `SUDO_USER` to the controller variable `DEPLOY_SUDO_USER`; variables are not automatically masked in logs. Missing required settings stop the run before any connection.

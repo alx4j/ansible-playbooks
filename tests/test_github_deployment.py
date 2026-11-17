@@ -75,8 +75,9 @@ class GitHubDeploymentTests(unittest.TestCase):
         env = DEPLOY.prepare_environment(self.event, self.env)
         self.assertNotIn("DEPLOY_DOPPLER_TOKEN", env)
 
-    def test_projects_directory_reaches_manual_and_automatic_playbooks(self):
+    def test_projects_settings_reach_manual_and_automatic_playbooks(self):
         self.env["PROJECTS_DIR"] = "work-projects"
+        self.env["PROJECTS_TOPIC"] = "server-projects"
         environments = (
             DEPLOY.prepare_environment(self.event, self.env),
             DEPLOY.prepare_inventory_environment("dev01", {"ansible_host": "192.0.2.10"}, self.env),
@@ -85,6 +86,7 @@ class GitHubDeploymentTests(unittest.TestCase):
             with patch.object(DEPLOY.subprocess, "run") as run:
                 DEPLOY.run_playbook(env, "site")
                 self.assertEqual(run.call_args.kwargs["env"]["PROJECTS_DIR"], "work-projects")
+                self.assertEqual(run.call_args.kwargs["env"]["PROJECTS_TOPIC"], "server-projects")
 
     def test_doppler_token_reaches_only_the_site_playbook(self):
         env = DEPLOY.prepare_environment(self.event, self.env)
@@ -518,7 +520,7 @@ class WorkflowMaskingTests(unittest.TestCase):
         self.assertEqual(automatic["if"], "github.event_name == 'workflow_run'")
         self.assertEqual(set(automatic["env"]), {
             "DEPLOY_KNOWN_HOSTS", "DEPLOY_SSH_PORT", "DEPLOY_SSH_PRIVATE_KEY", "DEPLOY_SUDO_USER", "SUDO_PASSWORD",
-            "PROJECTS_DIR", "DOPPLER_TOKEN",
+            "PROJECTS_DIR", "PROJECTS_TOPIC", "DOPPLER_TOKEN",
         })
         self.assertEqual(automatic["env"]["DOPPLER_TOKEN"], "${{ secrets.DOPPLER_TOKEN }}")
         self.assertNotIn("BOOTSTRAP_", json.dumps(steps))
@@ -535,6 +537,7 @@ class WorkflowMaskingTests(unittest.TestCase):
         for step in job["steps"]:
             if "python3 scripts/github-deploy.py" in step.get("run", ""):
                 self.assertEqual(step["env"]["PROJECTS_DIR"], "${{ vars.PROJECTS_DIR }}")
+                self.assertEqual(step["env"]["PROJECTS_TOPIC"], "${{ vars.PROJECTS_TOPIC }}")
 
     def test_first_step_masks_event_input_without_shell_interpolation(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/deploy.yml").read_text())

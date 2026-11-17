@@ -2,8 +2,9 @@
 
 Configure a development VPS with a dedicated account, sudo and SSH access, automatic updates, Podman, Java through SDKMAN and jenv, Gradle, Go, Rust/Cargo, Codex, Herdr, Moshi, and Mosh. Development commands are available on the user's PATH, with a configurable projects directory in their home.
 
-Repositories owned by `alx4j` with the GitHub topic `work` are cloned over SSH
-into that projects directory. Existing checkouts are left untouched; removing
+Repositories owned by `alx4j` with the GitHub topic selected by `PROJECTS_TOPIC`
+(default `work`) are cloned over SSH into that projects directory. Existing
+checkouts are left untouched; removing
 the topic archives inactive, automation-owned checkouts. This uses the
 Doppler-managed GitHub credential; see [work repository setup](docs/work-repositories.md).
 

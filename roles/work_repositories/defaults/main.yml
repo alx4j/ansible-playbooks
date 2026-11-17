@@ -1,7 +1,7 @@
 ---
 work_repositories_enabled: true
 work_repositories_owner: alx4j
-work_repositories_topic: work
+work_repositories_topic: "{{ lookup('ansible.builtin.env', 'PROJECTS_TOPIC') | default('work', true) }}"
 work_repositories_user: "{{ dev_host_user }}"
 work_repositories_home: "{{ dev_host_home }}"
 work_repositories_directory: "{{ dev_host_home }}/{{ dev_host_projects_dir }}"

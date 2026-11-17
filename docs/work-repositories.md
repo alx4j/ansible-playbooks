@@ -1,7 +1,8 @@
 # Work repositories
 
-Add the `work` topic to repositories you own on GitHub. Every **Bootstrap VPS**
-run then synchronizes those repositories into the development account's
+Add the topic selected by `PROJECTS_TOPIC` (default `work`) to repositories you
+own on GitHub. Every **Bootstrap VPS** run then synchronizes those repositories
+into the development account's
 `$PROJECTS_DIR`. The same rules apply during first setup, manual reruns, and
 automatic updates after a validated merge to `main`.
 
@@ -79,9 +80,9 @@ GitHub renames; an existing checkout keeps its local directory and origin URL.
 GitHub normally redirects the old repository URL; update it yourself if needed.
 
 Before archiving, the helper successfully reads the repository again and confirms
-both its identity and the absence of `work`. A missing API result, lost access,
-owner transfer, or failed request is not treated as topic removal. Discovery must
-finish every page before any repository operation begins.
+both its identity and the absence of the selected topic. A missing API result,
+lost access, owner transfer, or failed request is not treated as topic removal.
+Discovery must finish every page before any repository operation begins.
 
 Moves are skipped when the development account has a process working in the
 checkout or holding files open, a running Herdr session references it, or Git has
@@ -100,8 +101,18 @@ skipped repositories. Failures remain failures.
 
 ## Settings
 
+Set `PROJECTS_TOPIC` in GitHub's **development environment variables** to choose
+the topic for both manual runs and automatic updates. Local Ansible runs read
+the same controller environment variable. Unset or empty values use `work`.
+Topics must contain 1–50 lowercase letters, digits, or hyphens and start with a
+letter or digit.
+
+Changing `PROJECTS_TOPIC` changes the selection on the next run. Previously
+managed repositories without the new topic can be archived under the same
+inactivity and ownership safeguards; no repositories are permanently deleted.
+
 Defaults live in [the work-repositories role](../roles/work_repositories/defaults/main.yml).
-Override them in inventory when needed:
+Inventory values override the environment-derived defaults when needed:
 
 ```yaml
 work_repositories_owner: alx4j
