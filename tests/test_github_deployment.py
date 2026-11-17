@@ -69,6 +69,17 @@ class GitHubDeploymentTests(unittest.TestCase):
             self.assertNotIn(name, env)
         self.hash.assert_not_called()
 
+    def test_projects_directory_reaches_manual_and_automatic_playbooks(self):
+        self.env["PROJECTS_DIR"] = "work-projects"
+        environments = (
+            DEPLOY.prepare_environment(self.event, self.env),
+            DEPLOY.prepare_inventory_environment("dev01", {"ansible_host": "192.0.2.10"}, self.env),
+        )
+        for env in environments:
+            with patch.object(DEPLOY.subprocess, "run") as run:
+                DEPLOY.run_playbook(env, "site")
+                self.assertEqual(run.call_args.kwargs["env"]["PROJECTS_DIR"], "work-projects")
+
     def test_valid_addresses_and_nondefault_port(self):
         self.env["DEPLOY_SSH_PORT"] = "2222"
         for address in ("2001:db8::10", "vps.example.com", "vps.example.com."):
@@ -465,6 +476,7 @@ class WorkflowMaskingTests(unittest.TestCase):
         self.assertEqual(automatic["if"], "github.event_name == 'workflow_run'")
         self.assertEqual(set(automatic["env"]), {
             "DEPLOY_KNOWN_HOSTS", "DEPLOY_SSH_PORT", "DEPLOY_SSH_PRIVATE_KEY", "DEPLOY_SUDO_USER", "SUDO_PASSWORD",
+            "PROJECTS_DIR",
         })
         self.assertNotIn("BOOTSTRAP_", json.dumps(steps))
         self.assertEqual(steps[-1]["if"], "github.event_name == 'workflow_dispatch'")
@@ -477,6 +489,9 @@ class WorkflowMaskingTests(unittest.TestCase):
         self.assertEqual(env["DEPLOY_SUDO_USER"], "${{ vars.SUDO_USER }}")
         self.assertEqual(env["SUDO_PASSWORD"], "${{ secrets.SUDO_PASSWORD }}")
         self.assertNotIn("DEPLOY_BOOTSTRAP_SECRET", env)
+        for step in job["steps"]:
+            if "python3 scripts/github-deploy.py" in step.get("run", ""):
+                self.assertEqual(step["env"]["PROJECTS_DIR"], "${{ vars.PROJECTS_DIR }}")
 
     def test_first_step_masks_event_input_without_shell_interpolation(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/deploy.yml").read_text())

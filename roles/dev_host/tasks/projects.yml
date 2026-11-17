@@ -1,0 +1,27 @@
+---
+- name: Validate the projects directory name
+  ansible.builtin.assert:
+    that:
+      - dev_host_projects_dir is string
+      - dev_host_projects_dir is match('^[A-Za-z0-9_-][A-Za-z0-9_.-]*\Z')
+    fail_msg: PROJECTS_DIR must be a single directory name starting with a letter, digit, underscore, or hyphen.
+
+- name: Inspect the projects directory without following symlinks
+  ansible.builtin.stat:
+    path: "{{ dev_host_home }}/{{ dev_host_projects_dir }}"
+    follow: false
+  register: dev_host_projects_directory
+
+- name: Reject a projects directory symlink
+  ansible.builtin.assert:
+    that:
+      - not dev_host_projects_directory.stat.islnk | default(false)
+    fail_msg: The projects directory must not be a symlink.
+
+- name: Create the user's projects directory
+  ansible.builtin.file:
+    path: "{{ dev_host_home }}/{{ dev_host_projects_dir }}"
+    state: directory
+    owner: "{{ dev_host_user }}"
+    group: "{{ dev_host_user }}"
+    mode: "0700"

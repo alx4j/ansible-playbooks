@@ -1,0 +1,175 @@
+---
+- name: Validate the pinned Rust installer inputs
+  ansible.builtin.assert:
+    that:
+      - dev_host_rust_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+      - dev_host_rustup_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+      - ansible_facts['architecture'] in dev_host_rustup_architectures
+      - ansible_facts['architecture'] in dev_host_rustup_checksums
+      - dev_host_rustup_checksums.get(ansible_facts['architecture'], '') is match('^sha256:[a-f0-9]{64}$')
+    fail_msg: Select exact Rust and rustup versions with a reviewed installer checksum for this architecture.
+
+- name: Install and select the user Rust toolchain
+  environment:
+    HOME: "{{ dev_host_home }}"
+    CARGO_HOME: "{{ dev_host_home }}/.cargo"
+    RUSTUP_HOME: "{{ dev_host_home }}/.rustup"
+  block:
+    - name: Inspect the Rust tool proxies
+      ansible.builtin.stat:
+        path: "{{ dev_host_home }}/.cargo/bin/{{ dev_host_rust_proxy }}"
+      loop:
+        - rustup
+        - rustc
+        - cargo
+      loop_control:
+        loop_var: dev_host_rust_proxy
+      register: dev_host_rust_proxies
+
+    - name: Inspect the rustup settings file
+      ansible.builtin.stat:
+        path: "{{ dev_host_home }}/.rustup/settings.toml"
+      register: dev_host_rustup_settings_file
+
+    - name: Read the installed rustup version
+      when: dev_host_rust_proxies.results[0].stat.exists
+      ansible.builtin.command:
+        argv:
+          - "{{ dev_host_home }}/.cargo/bin/rustup"
+          - --version
+      register: dev_host_rustup_current
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Install or repair the pinned rustup and tool proxies
+      when: >-
+        (dev_host_rustup_current.stdout | default('')).split(' ')[0:2] !=
+        ['rustup', dev_host_rustup_version] or
+        not dev_host_rust_proxies.results[1].stat.exists or
+        not dev_host_rust_proxies.results[2].stat.exists or
+        not dev_host_rustup_settings_file.stat.exists
+      block:
+        - name: Download the verified rustup executable
+          ansible.builtin.get_url:
+            url: >-
+              https://static.rust-lang.org/rustup/archive/{{ dev_host_rustup_version }}/{{
+              dev_host_rustup_architectures[ansible_facts['architecture']] }}/rustup-init
+            dest: "{{ dev_host_home }}/.cache/ansible-installers/rustup-init"
+            checksum: "{{ dev_host_rustup_checksums[ansible_facts['architecture']] }}"
+            mode: "0700"
+
+        - name: Initialize rustup without changing shell startup files
+          ansible.builtin.command:
+            argv:
+              - "{{ dev_host_home }}/.cache/ansible-installers/rustup-init"
+              - -y
+              - --no-modify-path
+              - --default-host
+              - "{{ dev_host_rustup_architectures[ansible_facts['architecture']] }}"
+              - --default-toolchain
+              - none
+              - --profile
+              - minimal
+          changed_when: true
+
+    - name: Configure the initialized Rust installation
+      when: not ansible_check_mode
+      block:
+        - name: Read the rustup settings
+          ansible.builtin.slurp:
+            src: "{{ dev_host_home }}/.rustup/settings.toml"
+          register: dev_host_rustup_settings
+
+        - name: Disable rustup automatic self updates
+          when: >-
+            (dev_host_rustup_settings.content | b64decode |
+            regex_search('(?m)^auto_self_update\\s*=\\s*"disable"\\s*$')) is none
+          ansible.builtin.command:
+            argv:
+              - "{{ dev_host_home }}/.cargo/bin/rustup"
+              - set
+              - auto-self-update
+              - disable
+          changed_when: true
+
+        - name: Check the pinned Rust compiler and Cargo
+          ansible.builtin.command:
+            argv:
+              - "{{ dev_host_home }}/.cargo/bin/rustup"
+              - run
+              - "{{ dev_host_rust_version }}-{{ dev_host_rustup_architectures[ansible_facts['architecture']] }}"
+              - "{{ dev_host_rust_tool }}"
+              - --version
+          loop:
+            - rustc
+            - cargo
+          loop_control:
+            loop_var: dev_host_rust_tool
+          register: dev_host_rust_current
+          changed_when: false
+          failed_when: false
+
+        - name: Install the pinned minimal Rust toolchain when incomplete
+          when: >-
+            dev_host_rust_current.results[0].rc != 0 or
+            dev_host_rust_current.results[1].rc != 0 or
+            dev_host_rust_current.results[0].stdout.split(' ')[0:2] != ['rustc', dev_host_rust_version] or
+            dev_host_rust_current.results[1].stdout.split(' ')[0:2] != ['cargo', dev_host_rust_version]
+          ansible.builtin.command:
+            argv:
+              - "{{ dev_host_home }}/.cargo/bin/rustup"
+              - toolchain
+              - install
+              - "{{ dev_host_rust_version }}-{{ dev_host_rustup_architectures[ansible_facts['architecture']] }}"
+              - --profile
+              - minimal
+              - --no-self-update
+          changed_when: true
+
+        - name: Read the default Rust toolchain
+          ansible.builtin.command:
+            argv:
+              - "{{ dev_host_home }}/.cargo/bin/rustup"
+              - default
+          register: dev_host_rust_default
+          changed_when: false
+          failed_when: false
+
+        - name: Select the pinned default Rust toolchain
+          when: >-
+            dev_host_rust_default.stdout.split(' ')[0] !=
+            dev_host_rust_version ~ '-' ~ dev_host_rustup_architectures[ansible_facts['architecture']]
+          ansible.builtin.command:
+            argv:
+              - "{{ dev_host_home }}/.cargo/bin/rustup"
+              - default
+              - "{{ dev_host_rust_version }}-{{ dev_host_rustup_architectures[ansible_facts['architecture']] }}"
+          changed_when: true
+
+        - name: Verify the installed Rust tools and rustup versions
+          ansible.builtin.command:
+            argv: "{{ dev_host_rust_verification.argv }}"
+          loop:
+            - argv:
+                - "{{ dev_host_home }}/.cargo/bin/rustup"
+                - --version
+              prefix: "rustup {{ dev_host_rustup_version }} "
+            - argv:
+                - "{{ dev_host_home }}/.cargo/bin/rustc"
+                - "+{{ dev_host_rust_version }}-{{ dev_host_rustup_architectures[ansible_facts['architecture']] }}"
+                - --version
+              prefix: "rustc {{ dev_host_rust_version }} "
+            - argv:
+                - "{{ dev_host_home }}/.cargo/bin/cargo"
+                - "+{{ dev_host_rust_version }}-{{ dev_host_rustup_architectures[ansible_facts['architecture']] }}"
+                - --version
+              prefix: "cargo {{ dev_host_rust_version }} "
+          loop_control:
+            loop_var: dev_host_rust_verification
+            label: "{{ dev_host_rust_verification.prefix | trim }}"
+          register: dev_host_rust_verified
+          changed_when: false
+          failed_when: >-
+            dev_host_rust_verified.rc != 0 or
+            not dev_host_rust_verified.stdout.startswith(dev_host_rust_verification.prefix)

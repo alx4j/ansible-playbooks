@@ -1,6 +1,6 @@
 # Development VPS playbooks
 
-Configure a development VPS with a dedicated account, sudo and SSH access, automatic updates, Podman, Java through SDKMAN and jenv, Gradle, Codex, Moshi, and Mosh.
+Configure a development VPS with a dedicated account, sudo and SSH access, automatic updates, Podman, Java through SDKMAN and jenv, Gradle, Go, Rust/Cargo, Codex, Moshi, and Mosh. Development commands are available on the user's PATH, with a configurable projects directory in their home.
 
 The managed host needs Debian/Ubuntu, Python 3, OpenSSH, APT, and systemd. The configuration supports AMD64 and ARM64; container tests exercise AMD64 on Debian 13. GitHub Actions provides the controller, so you do not need Ansible installed on your workstation.
 

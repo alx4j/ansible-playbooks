@@ -1,0 +1,71 @@
+---
+- name: Validate the pinned Go release
+  ansible.builtin.assert:
+    that:
+      - dev_host_go_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+      - ansible_facts['architecture'] in dev_host_go_architectures
+      - dev_host_go_checksums[dev_host_go_architectures[ansible_facts['architecture']]] is match('^[a-f0-9]{64}$')
+    fail_msg: Select a pinned Go release and its official Linux archive checksum for this architecture.
+
+- name: Install and select the pinned Go toolchain
+  environment:
+    GOTOOLCHAIN: local
+  vars:
+    dev_host_go_architecture: "{{ dev_host_go_architectures[ansible_facts['architecture']] }}"
+    dev_host_go_directory: "{{ dev_host_home }}/.local/share/go/{{ dev_host_go_version }}"
+    dev_host_go_archive: "go{{ dev_host_go_version }}.linux-{{ dev_host_go_architecture }}.tar.gz"
+  block:
+    - name: Check the selected Go binary
+      ansible.builtin.stat:
+        path: "{{ dev_host_go_directory }}/go/bin/go"
+      register: dev_host_go_binary
+
+    - name: Install the missing Go release from its verified archive
+      when: not dev_host_go_binary.stat.exists
+      block:
+        - name: Download the checksum-verified Go archive
+          ansible.builtin.get_url:
+            url: "https://go.dev/dl/{{ dev_host_go_archive }}"
+            dest: "{{ dev_host_home }}/.cache/ansible-installers/{{ dev_host_go_archive }}"
+            checksum: "sha256:{{ dev_host_go_checksums[dev_host_go_architecture] }}"
+            mode: "0600"
+
+        # Go requires extraction into a clean tree, including after an interrupted install.
+        - name: Remove an incomplete Go extraction directory
+          ansible.builtin.file:
+            path: "{{ dev_host_go_directory }}"
+            state: absent
+
+        - name: Create the versioned Go extraction directory
+          ansible.builtin.file:
+            path: "{{ dev_host_go_directory }}"
+            state: directory
+            mode: "0700"
+
+        - name: Extract the verified Go release
+          ansible.builtin.unarchive:
+            src: "{{ dev_host_home }}/.cache/ansible-installers/{{ dev_host_go_archive }}"
+            dest: "{{ dev_host_go_directory }}"
+            remote_src: true
+            creates: "{{ dev_host_go_directory }}/go/bin/go"
+
+    - name: Verify the selected Go toolchain
+      ansible.builtin.command:
+        argv:
+          - "{{ dev_host_go_directory }}/go/bin/go"
+          - version
+      register: dev_host_go_result
+      changed_when: false
+
+    - name: Require the pinned Go version and architecture
+      when: not ansible_check_mode
+      ansible.builtin.assert:
+        that:
+          - dev_host_go_result.stdout == 'go version go' ~ dev_host_go_version ~ ' linux/' ~ dev_host_go_architecture
+
+    - name: Select the verified Go installation
+      ansible.builtin.file:
+        src: "{{ dev_host_go_directory }}/go"
+        dest: "{{ dev_host_home }}/.local/share/go/current"
+        state: link
+        force: true
