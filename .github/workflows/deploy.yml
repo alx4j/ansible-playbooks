@@ -83,6 +83,7 @@ jobs:
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
           DEPLOY_SUDO_USER: ${{ vars.SUDO_USER }}
           SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
           export PATH="$PWD/.venv/bin:$PATH"
           python3 scripts/github-deploy.py --update-inventory
@@ -95,6 +96,7 @@ jobs:
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
           DEPLOY_SUDO_USER: ${{ vars.SUDO_USER }}
           SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
           export PATH="$PWD/.venv/bin:$PATH"
           python3 scripts/github-deploy.py

@@ -16,6 +16,7 @@ Save these settings once:
 | `ANSIBLE_KNOWN_HOSTS` | Variable | Independently verified OpenSSH host-key entries for every managed server. |
 | `ANSIBLE_SSH_PORT` | Optional variable | Existing SSH port; defaults to `22`. This does not change the server's listening port. |
 | `PROJECTS_DIR` | Optional variable | Projects folder name inside the development user's home, such as `code`; defaults to `projects`. |
+| `DOPPLER_TOKEN` | Optional secret | Read-only Doppler Service Token; enables encrypted credential storage and the local secret service for Codex skills. |
 
 These account and key settings are shared across the inventory. GitHub maps `SUDO_USER` to the controller variable `DEPLOY_SUDO_USER`; variables are not automatically masked in logs. Missing required settings stop the run before any connection.
 
@@ -25,7 +26,7 @@ The [development inventory](../inventories/development/hosts.yml) contains serve
 
 Obtain each SSH host key through a trusted channel such as the provider console. The entry must match the connection address, including an `ansible_host` override. For a nondefault port, use `[hostname]:port` in `known_hosts`. An unverified `ssh-keyscan` result does not establish trust. The runner must be able to reach each server's SSH port.
 
-`DOPPLER_TOKEN` is not used by this workflow or installed on servers. Standard GitHub Actions usage and billing apply.
+When supplied, `DOPPLER_TOKEN` is delivered only to the routine `site` play and encrypted on the VPS. It is excluded from access probes, initial-user bootstrap, and generated inventory. See [Doppler setup and rotation](doppler.md). Omitting it leaves any existing service and credential unchanged. Standard GitHub Actions usage and billing apply.
 
 ## 2. Establish access
 
@@ -61,7 +62,7 @@ You can still rerun one server manually with just its address once development a
 
 ## Execution details
 
-Both paths install pinned dependencies through `scripts/setup` and run `scripts/check`. The automatic step receives only routine SSH/sudo credentials. Inventory resolution runs without credentials in its subprocess environment; automatic runs preserve resolved host-specific role settings and ports while enforcing the configured development account.
+Both paths install pinned dependencies through `scripts/setup` and run `scripts/check`. The deployment steps receive routine SSH/sudo credentials and the optional Doppler Service Token. Inventory resolution runs without credentials in its subprocess environment; automatic runs preserve resolved host-specific role settings and ports while enforcing the configured development account.
 
 `scripts/github-deploy.py` creates a temporary inventory for exactly one server at each stage. `scripts/deploy` checks syntax and target selection, enforces host-key checking, and uses separate SSH control directories so earlier connections cannot bypass authentication. Passwords are never passed as command arguments. Credential files use mode `0600` inside a `0700` temporary directory, removed on exit and ordinary cancellation. Initial credentials and the account-creation hash are excluded from routine Ansible subprocesses.
 

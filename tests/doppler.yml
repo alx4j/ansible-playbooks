@@ -1,0 +1,11 @@
+---
+- name: Exercise token rotation in the disposable VM
+  hosts: development
+  remote_user: "{{ sudo_user }}"
+  become: true
+  gather_facts: true
+  vars:
+    doppler_secrets_client_user: "{{ sudo_user }}"
+    doppler_secrets_client_home: "/home/{{ sudo_user }}"
+  roles:
+    - role: doppler_secrets

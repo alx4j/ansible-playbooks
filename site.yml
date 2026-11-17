@@ -7,3 +7,5 @@
   serial: 1
   roles:
     - role: dev_host
+    - role: doppler_secrets
+      when: doppler_secrets_enabled | bool

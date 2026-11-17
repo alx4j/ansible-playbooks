@@ -13,6 +13,10 @@ case "${DEPLOY_PLAYBOOK:-}" in
   access|bootstrap|site) ;;
   *) fail 'Select access, bootstrap, or site.' ;;
 esac
+if [[ "$DEPLOY_PLAYBOOK" != site ]]; then
+  unset DOPPLER_TOKEN
+fi
+unset DEPLOY_DOPPLER_TOKEN
 [[ "${DEPLOY_HOST:-}" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || fail 'Select one exact inventory hostname.'
 [[ -n "${DEPLOY_INVENTORY:-}" ]] || fail 'Supply DEPLOY_INVENTORY through the deployment adapter.'
 [[ -n "${DEPLOY_KNOWN_HOSTS:-}" ]] || fail 'Set the verified ANSIBLE_KNOWN_HOSTS environment variable in GitHub.'
