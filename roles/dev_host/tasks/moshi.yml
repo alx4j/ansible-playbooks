@@ -80,7 +80,7 @@
 - name: Keep Moshi updates under Ansible control
   when:
     - not ansible_check_mode
-    - dev_host_moshi_update_policy.stdout_lines[0] != 'auto-update: off'
+    - "dev_host_moshi_update_policy.stdout_lines[0] != 'auto-update: off'"
   ansible.builtin.command:
     argv:
       - "{{ dev_host_home }}/.local/bin/moshi-hook"
