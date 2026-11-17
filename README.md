@@ -8,6 +8,10 @@ checkouts are left untouched; removing
 the topic archives inactive, automation-owned checkouts. This uses the
 Doppler-managed GitHub credential; see [work repository setup](docs/work-repositories.md).
 
+The [Codex toolkit](docs/agent-toolkit.md) installs the personal plugins and
+global instructions from a separate managed checkout. Ansible updates that
+checkout from toolkit `main` on each run, preserving your editable project copy.
+
 The managed host needs Debian/Ubuntu, Python 3, OpenSSH, APT, and systemd. The configuration supports AMD64 and ARM64; tests exercise Debian 13 containers and an Ubuntu 24.04 VM on AMD64. GitHub Actions provides the controller, so you do not need Ansible installed on your workstation.
 
 ## Run through GitHub Actions
@@ -36,6 +40,7 @@ The setup workflow runs these stages automatically. They are also available for 
 - [Doppler secrets](docs/doppler.md): encrypted token setup and selected secrets for normal SSH/tmux/Herdr sessions.
 - [Herdr and Moshi](docs/herdr.md): persistent workspaces, phone pairing, session discovery, and automatic window titles.
 - [Work repositories](docs/work-repositories.md): topic selection, GitHub SSH access, and safe archive/restore behavior.
+- [Codex toolkit](docs/agent-toolkit.md): managed plugins, global instructions, updates, and the separate development checkout.
 - [Setup history](ansible.md): the historical commands that informed these playbooks.
 
 ## Repository map
@@ -53,6 +58,8 @@ ansible-playbooks/
 │   ├── files/                    # SSH configuration validator
 │   └── handlers/                 # Reload or restart services after changes
 ├── roles/doppler_secrets/        # Encrypted credential, isolated service, and Codex skill wrapper
+├── roles/github_access/          # Shared GitHub API client, SSH enrollment, and verified host key
+├── roles/agent_toolkit/          # Managed toolkit checkout, Codex plugins, and global instructions
 ├── roles/work_repositories/      # GitHub topic discovery, SSH checkouts, and archive/restore
 ├── scripts/                      # Controller setup, workflow runner, and test entry points
 ├── tests/                        # Unit tests, container fixtures, and full VM checks

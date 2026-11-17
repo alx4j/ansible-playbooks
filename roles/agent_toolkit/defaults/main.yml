@@ -1,0 +1,14 @@
+---
+agent_toolkit_enabled: true
+agent_toolkit_user: "{{ dev_host_user }}"
+agent_toolkit_home: "{{ dev_host_home }}"
+agent_toolkit_owner: alx4j
+agent_toolkit_repository: "git@github.com:{{ agent_toolkit_owner }}/alx4j-agent-toolkit.git"
+agent_toolkit_checkout: "{{ agent_toolkit_home }}/.local/share/alx4j-agent-toolkit"
+agent_toolkit_github_secret: GITHUB_TOKEN
+agent_toolkit_manage_instructions: true
+agent_toolkit_plugins:
+  - common
+  - game-development
+  - infrastructure
+  - productivity

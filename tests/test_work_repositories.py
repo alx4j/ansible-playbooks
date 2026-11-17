@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -13,6 +14,8 @@ import urllib.request
 
 
 SOURCE = Path(__file__).resolve().parents[1] / "roles/work_repositories/files/sync.py"
+sys.path.insert(0, str(SOURCE.parents[2] / "github_access/files"))
+import github_access
 spec = importlib.util.spec_from_file_location("work_sync", SOURCE)
 SYNC = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(SYNC)
@@ -284,7 +287,7 @@ class WorkRepositoriesTests(unittest.TestCase):
         with patch.object(api, "request", side_effect=[[repository(i + 1, f"r{i}") for i in range(100)], []]) as request:
             self.assertEqual(len(list(api.pages("/user/repos?affiliation=owner"))), 100)
             self.assertIn("page=2", request.call_args.args[0])
-        redirect = SYNC.GitHubRedirect()
+        redirect = github_access.GitHubRedirect()
         with self.assertRaises(SYNC.SyncError):
             redirect.redirect_request(urllib.request.Request("https://api.github.com/repos/fixture/one"),
                                       None, 301, "Moved", {}, "https://example.invalid/steal")

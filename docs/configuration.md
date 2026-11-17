@@ -76,9 +76,9 @@ The inventory exposes `sudo_user` for the account name. Role inputs use the `dev
 | `dev_host_gradle_version`, `dev_host_codex_version` | Override the pinned tool versions. |
 | `dev_host_herdr_version`, `dev_host_herdr_checksums` | Select Herdr and the matching Linux release checksums. |
 | `dev_host_codex_config_source` | Seed `.codex/config.toml` only if absent. The application and hook installer subsequently own it. |
-| `dev_host_codex_instructions_source` | Manage `.codex/AGENTS.md` from a supplied controller-side file. |
+| `dev_host_codex_instructions_source` | Manage `.codex/AGENTS.md` from a supplied controller-side file; first disable `agent_toolkit_manage_instructions`. |
 
-Both source-file settings default to empty, preserving existing files. Use absolute paths inside ignored `private/` for local runs. Copies use mode `0600` and suppress output/diffs. GitHub runners need their own copies of any referenced files. The historical uppercase `AGENTS.MD` file is not deleted.
+Both source-file settings default to empty. The [toolkit role](agent-toolkit.md) manages global instructions by default, backing up an existing file before linking its versioned copy. Use absolute paths inside ignored `private/` for independent source files. Copies use mode `0600` and suppress output/diffs. GitHub runners need their own copies of any referenced files. The historical uppercase `AGENTS.MD` file is not deleted.
 
 ## Managed state and ownership
 

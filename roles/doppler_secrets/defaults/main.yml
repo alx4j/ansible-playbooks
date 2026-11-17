@@ -3,3 +3,4 @@
 doppler_secrets_enabled: "{{ lookup('ansible.builtin.env', 'DOPPLER_TOKEN') | length > 0 }}"
 doppler_secrets_client_user: "{{ dev_host_user }}"
 doppler_secrets_client_home: "{{ dev_host_home }}"
+doppler_secrets_install_skill: true

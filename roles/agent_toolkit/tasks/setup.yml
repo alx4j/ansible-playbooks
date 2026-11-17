@@ -1,0 +1,45 @@
+---
+- name: Require a separate managed checkout and one owner for global instructions
+  ansible.builtin.assert:
+    that:
+      - agent_toolkit_user is match('^[a-z_][a-z0-9_-]*$')
+      - agent_toolkit_user != 'root'
+      - agent_toolkit_home == '/home/' ~ agent_toolkit_user
+      - agent_toolkit_checkout == agent_toolkit_home ~ '/.local/share/alx4j-agent-toolkit'
+      - agent_toolkit_owner is match('^[A-Za-z0-9][A-Za-z0-9-]{0,38}$')
+      - agent_toolkit_github_secret is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - agent_toolkit_plugins is sequence and agent_toolkit_plugins is not string
+      - "'common' in agent_toolkit_plugins"
+      - not (agent_toolkit_manage_instructions | bool) or dev_host_codex_instructions_source | length == 0
+    fail_msg: Keep the managed toolkit outside projects, include common, and choose one source for global instructions.
+
+- name: Create the root-owned toolkit helper directory
+  ansible.builtin.file:
+    path: /usr/local/lib/agent-toolkit
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the toolkit reconciliation helper
+  ansible.builtin.copy:
+    src: install.py
+    dest: /usr/local/lib/agent-toolkit/install.py
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Create the user's toolkit and Codex parent directories
+  ansible.builtin.file:
+    path: "{{ agent_toolkit_home }}/{{ agent_toolkit_parent }}"
+    state: directory
+    owner: "{{ agent_toolkit_user }}"
+    group: "{{ agent_toolkit_user }}"
+    mode: "0700"
+  loop:
+    - .local
+    - .local/share
+    - .local/state
+    - .codex
+  loop_control:
+    loop_var: agent_toolkit_parent

@@ -90,6 +90,14 @@ keys or accesses private repositories. The full-host VM disables that external
 integration because its Doppler token is synthetic; the dedicated repository
 tests are required through the existing checks and SSH jobs.
 
+Toolkit unit tests cover package changes, cache repair, marketplace conflicts,
+instruction and standalone-skill backups, and protection of local Git work. The
+VM additionally runs the production checkout and installation tasks with a local
+fixture repository and the real pinned Codex CLI. It verifies all four plugin
+packages, updates from `main`, global instruction links, the plugin's Doppler
+client, unchanged reruns, and preservation of an unfinished development branch.
+The VM disables live toolkit GitHub access while running these local fixtures.
+
 The disposable VM setup clears the hosted runner's global `XDG_CONFIG_HOME` and
 `XDG_RUNTIME_DIR` assignments so fixture accounts and SSH logins use their own
 home and runtime directories.

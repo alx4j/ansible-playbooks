@@ -1,0 +1,36 @@
+---
+- name: Install toolkit management prerequisites
+  ansible.builtin.import_tasks: setup.yml
+
+- name: Configure the toolkit as the development account
+  become: true
+  become_user: "{{ agent_toolkit_user }}"
+  environment:
+    HOME: "{{ agent_toolkit_home }}"
+    CODEX_HOME: "{{ agent_toolkit_home }}/.codex"
+    PATH: "{{ agent_toolkit_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+  block:
+    - name: Establish verified GitHub SSH access independently of project topics
+      when: not ansible_check_mode
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /usr/local/lib/doppler-secrets/client.py
+          - run
+          - --map
+          - "{{ agent_toolkit_github_secret }}=GITHUB_TOKEN"
+          - --clean-env
+          - --inherit
+          - HOME
+          - --
+          - /usr/bin/python3
+          - -I
+          - /usr/local/lib/github-access/github_access.py
+          - --owner
+          - "{{ agent_toolkit_owner }}"
+      register: agent_toolkit_access
+      changed_when: agent_toolkit_access.rc == 0 and (agent_toolkit_access.stdout | from_json).changed
+
+    - name: Update the managed checkout and installed packages
+      when: not ansible_check_mode
+      ansible.builtin.import_tasks: configure.yml

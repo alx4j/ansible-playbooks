@@ -9,5 +9,10 @@
     - role: dev_host
     - role: doppler_secrets
       when: doppler_secrets_enabled | bool
+      doppler_secrets_install_skill: "{{ not (agent_toolkit_enabled | bool) }}"
+    - role: github_access
+      when: (agent_toolkit_enabled | bool) or (work_repositories_enabled | bool)
+    - role: agent_toolkit
+      when: agent_toolkit_enabled | bool
     - role: work_repositories
       when: work_repositories_enabled | bool

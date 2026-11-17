@@ -116,6 +116,8 @@ fi
 sudo env "PATH=$PATH" python3 tests/doppler-runtime.py --rotated
 unset DOPPLER_TOKEN
 
+run_tool_test tests/agent-toolkit.py
+
 if [[ -n "${TOOL_INSTALLER_CACHE:-}" ]]; then
   mkdir -p "$TOOL_INSTALLER_CACHE"
   sudo cp -a /home/ansibletest/.cache/ansible-installers/. "$TOOL_INSTALLER_CACHE/"

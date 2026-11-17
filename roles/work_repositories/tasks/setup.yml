@@ -24,13 +24,14 @@
     group: root
     mode: "0644"
 
-- name: Install GitHub's verified Ed25519 host key
-  ansible.builtin.copy:
-    src: github_known_hosts
+- name: Preserve the host-key path recorded in existing Git checkouts
+  ansible.builtin.file:
+    src: /usr/local/lib/github-access/github_known_hosts
     dest: /usr/local/lib/work-repositories/github_known_hosts
+    state: link
+    force: true
     owner: root
     group: root
-    mode: "0644"
 
 - name: Create private SSH and repository-state directories
   ansible.builtin.file:

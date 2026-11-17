@@ -18,5 +18,7 @@ host = {
     "dev_host_codex_config_source": str(Path(__file__).resolve().parent / "fixtures/codex-config.toml"),
     # External GitHub access is exercised with fixtures in work-repositories-ssh.py.
     "work_repositories_enabled": False,
+    # Toolkit Git updates and real Codex installs run separately with local fixtures.
+    "agent_toolkit_enabled": False,
 }
 (directory / "inventory.json").write_text(json.dumps({"all": {"children": {"development": {"hosts": {"vm": host}}}}}))

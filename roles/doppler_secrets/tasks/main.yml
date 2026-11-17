@@ -124,7 +124,11 @@
         enabled: true
         state: "{{ 'restarted' if doppler_secrets_restart_required else 'started' }}"
 
+- name: Install the stable credential client
+  ansible.builtin.import_tasks: client.yml
+
 - name: Create the managed Doppler skill directory
+  when: doppler_secrets_install_skill | bool
   ansible.builtin.file:
     path: "{{ doppler_secrets_client_home }}/{{ doppler_secrets_skill_directory }}"
     state: directory
@@ -138,6 +142,7 @@
     loop_var: doppler_secrets_skill_directory
 
 - name: Install the Doppler skill and command wrapper
+  when: doppler_secrets_install_skill | bool
   ansible.builtin.copy:
     src: skill/
     dest: "{{ doppler_secrets_client_home }}/.codex/skills/doppler-secrets/"
@@ -153,7 +158,7 @@
   ansible.builtin.command:
     argv:
       - /usr/bin/python3
-      - "{{ doppler_secrets_client_home }}/.codex/skills/doppler-secrets/scripts/doppler.py"
+      - /usr/local/lib/doppler-secrets/client.py
       - doctor
       - --offline
   register: doppler_secrets_health
