@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# This test configures SSH, UFW, and systemd on a disposable hosted runner.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_ENVIRONMENT:-}" != github-hosted || "${RUNNER_OS:-}" != Linux ]]; then
+  echo 'Run this test only in a disposable GitHub-hosted Linux VM.' >&2
+  exit 1
+fi
+for account in ansibleinitial ansibletest; do
+  if getent passwd "$account" > /dev/null; then
+    echo 'The VM test requires fresh fixture accounts.' >&2
+    exit 1
+  fi
+done
+export PATH="$PWD/.venv/bin:$PATH"
+export PROJECTS_DIR=work-projects
+vm_dir="$(mktemp -d "$RUNNER_TEMP/ansible-vm.XXXXXX")"
+trap 'rm -rf -- "$vm_dir"' EXIT
+
+sudo apt-get update -qq
+sudo apt-get install -y --no-install-recommends openssh-server sudo acl
+sudo useradd -m -s /bin/bash ansibleinitial
+printf '%s\n' 'ansibleinitial ALL=(ALL:ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/ansibleinitial-test > /dev/null
+sudo chmod 0440 /etc/sudoers.d/ansibleinitial-test
+sudo visudo -cf /etc/sudoers.d/ansibleinitial-test
+ssh-keygen -q -t ed25519 -N '' -f "$vm_dir/id"
+sudo install -d -o ansibleinitial -g ansibleinitial -m 0700 /home/ansibleinitial/.ssh
+sudo install -o ansibleinitial -g ansibleinitial -m 0600 "$vm_dir/id.pub" /home/ansibleinitial/.ssh/authorized_keys
+printf '%s\n' 'Port 2222' | sudo tee /etc/ssh/sshd_config.d/99-test-port.conf > /dev/null
+sudo systemctl disable --now ssh.socket
+sudo systemctl restart ssh.service
+python3 tests/vm-inventory.py "$vm_dir"
+ansible-playbook -i "$vm_dir/inventory.json" bootstrap.yml
+
+if [[ -n "${TOOL_INSTALLER_CACHE:-}" && -d "$TOOL_INSTALLER_CACHE" ]]; then
+  sudo install -d -o ansibletest -g ansibletest -m 0700 /home/ansibletest/.cache/ansible-installers
+  sudo cp -a "$TOOL_INSTALLER_CACHE/." /home/ansibletest/.cache/ansible-installers/
+  sudo chown -R ansibletest:ansibletest /home/ansibletest/.cache
+fi
+run_tool_test() {
+  sudo -u ansibletest env "PATH=$PATH" HOME=/home/ansibletest PROJECTS_DIR=work-projects \
+    ANSIBLE_LOCAL_TEMP=/home/ansibletest/.cache/ansible-local python3 "$@"
+}
+run_tool_test tests/projects.py -v
+run_tool_test tests/go-partial.py
+ansible-playbook -i "$vm_dir/inventory.json" site.yml
+run_tool_test tests/java-shell.py --prepare
+run_tool_test tests/toolchain-shell.py --prepare
+sudo env "PATH=$PATH" python3 tests/vm-state.py | tee "$vm_dir/state-before.json" > /dev/null
+ansible-playbook -i "$vm_dir/inventory.json" site.yml > "$vm_dir/second-run.log"
+cat "$vm_dir/second-run.log"
+python3 - "$vm_dir/second-run.log" <<'PY'
+from pathlib import Path
+import re
+import sys
+output = Path(sys.argv[1]).read_text()
+assert re.search(r"vm\s+:.*changed=0\s+unreachable=0\s+failed=0", output), "Full host configuration did not converge"
+PY
+run_tool_test tests/java-shell.py
+run_tool_test tests/toolchain-shell.py
+sudo env "PATH=$PATH" python3 tests/vm-state.py | tee "$vm_dir/state-after.json" > /dev/null
+diff -u "$vm_dir/state-before.json" "$vm_dir/state-after.json"
+
+if [[ -n "${TOOL_INSTALLER_CACHE:-}" ]]; then
+  mkdir -p "$TOOL_INSTALLER_CACHE"
+  sudo cp -a /home/ansibletest/.cache/ansible-installers/. "$TOOL_INSTALLER_CACHE/"
+  sudo chown -R "$(id -u):$(id -g)" "$TOOL_INSTALLER_CACHE"
+fi
+echo 'Full VM bootstrap, tools, SSH, firewall, timers, and unchanged service state passed'

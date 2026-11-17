@@ -104,14 +104,14 @@ def resolve_target(event):
     inventory = load_inventory()
     hostvars = inventory.get("_meta", {}).get("hostvars", {})
     matches = [
-        hostvars.get(name, {}) for name in development_hosts(inventory)
+        (name, hostvars.get(name, {})) for name in development_hosts(inventory)
         if address == name or address == hostvars.get(name, {}).get("ansible_host")
     ]
     if len(matches) > 1:
         raise ValueError("The server address matches multiple inventory entries; use a unique hostname.")
-    saved = matches[0] if matches else {}
+    name, saved = matches[0] if matches else ("dev01", {})
     address = server_address({"server_address": saved.get("ansible_host", address)})
-    return address
+    return name, {**saved, "ansible_host": address}
 
 
 def development_hosts(inventory):
@@ -209,18 +209,19 @@ def configure_server(env, initial_password):
     return run_playbook(env, "site").returncode
 
 
-def prepare_inventory_environment(name, variables, environment):
+def prepare_inventory_environment(name, variables, environment, inputs=None):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name):
         raise ValueError("Inventory entries must use exact hostnames, without patterns or SSH options.")
-    inputs = {"server_address": variables.get("ansible_host", name)}
-    env = prepare_environment({"inputs": inputs}, {
+    host_inputs = {**(inputs or {}), "server_address": variables.get("ansible_host", name)}
+    env = prepare_environment({"inputs": host_inputs}, {
         **environment,
         "DEPLOY_SSH_PORT": str(variables.get("ansible_port", environment.get("DEPLOY_SSH_PORT") or "22")),
     })
     configured = json.loads(env["DEPLOY_INVENTORY"])["all"]["children"]["development"]["hosts"]["dev01"]
     host = {**variables, **configured,
             "ansible_user": configured["sudo_user"], "dev_host_user": configured["sudo_user"]}
-    host.pop("dev_host_bootstrap_user", None)
+    if inputs is None:
+        host.pop("dev_host_bootstrap_user", None)
     host.pop("bootstrap_password_secret", None)
     env["DEPLOY_HOST"] = name
     env["DEPLOY_INVENTORY"] = json.dumps({"all": {"children": {"development": {"hosts": {name: host}}}}})
@@ -282,9 +283,10 @@ def main(*, update_only=False):
             return update_inventory(dict(os.environ))
         with open(os.environ["GITHUB_EVENT_PATH"]) as event_file:
             event = json.load(event_file)
-        inputs = {**workflow_inputs(event), "server_address": resolve_target(event)}
+        inputs = workflow_inputs(event)
+        name, variables = resolve_target(event)
         initial_password = inputs.get("bootstrap_password", "")
-        env = prepare_environment({"inputs": inputs}, dict(os.environ))
+        env = prepare_inventory_environment(name, variables, dict(os.environ), inputs=inputs)
         return configure_server(env, initial_password)
     except (OSError, KeyError, json.JSONDecodeError, subprocess.TimeoutExpired):
         print("Could not prepare deployment inputs or run the deployment tools.", file=sys.stderr)

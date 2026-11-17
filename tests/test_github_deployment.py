@@ -91,6 +91,27 @@ class GitHubDeploymentTests(unittest.TestCase):
                 self.assertEqual(host["ansible_port"], 2222)
                 self.assertEqual(host["dev_host_ssh_port"], 2222)
 
+    def test_manual_and_automatic_runs_preserve_the_same_host_configuration(self):
+        variables = {
+            "ansible_host": "192.0.2.10", "ansible_port": 2222,
+            "dev_host_projects_dir": "work", "dev_host_go_version": "1.27.3",
+            "dev_host_bootstrap_user": "staleuser", "bootstrap_password_secret": "UNUSED",
+            "ansible_user": "staleuser", "dev_host_user": "staleuser",
+        }
+        self.env["DEPLOY_SSH_PORT"] = "22"
+        automatic = DEPLOY.prepare_inventory_environment("demo", variables, self.env)
+        manual = DEPLOY.prepare_inventory_environment("demo", variables, self.env, inputs=self.event["inputs"])
+        hosts = [json.loads(env["DEPLOY_INVENTORY"])["all"]["children"]["development"]["hosts"]["demo"]
+                 for env in (automatic, manual)]
+        self.assertEqual(hosts[1].pop("dev_host_bootstrap_user"), "ubuntu")
+        self.assertEqual(hosts[0], hosts[1])
+        self.assertEqual(hosts[1]["ansible_port"], 2222)
+        self.assertEqual(hosts[1]["dev_host_projects_dir"], "work")
+        self.assertEqual(hosts[1]["dev_host_go_version"], "1.27.3")
+        self.assertEqual(hosts[1]["ansible_user"], "deploymenttest")
+        self.assertEqual(hosts[1]["dev_host_user"], "deploymenttest")
+        self.assertNotIn("bootstrap_password_secret", hosts[1])
+
     def test_missing_bootstrap_fields_keep_root_as_the_initial_account(self):
         del self.event["inputs"]["bootstrap_user"]
         del self.event["inputs"]["bootstrap_password"]
@@ -159,7 +180,9 @@ class InventoryTargetTests(unittest.TestCase):
             for address, expected in (("first.example.com", "192.0.2.20"),
                                       ("192.0.2.20", "192.0.2.20"),
                                       ("unlisted.example.com", "unlisted.example.com")):
-                self.assertEqual(DEPLOY.resolve_target({"inputs": {"server_address": address}}), expected)
+                name, variables = DEPLOY.resolve_target({"inputs": {"server_address": address}})
+                self.assertEqual(variables["ansible_host"], expected)
+                self.assertEqual(name, "dev01" if address == "unlisted.example.com" else "first.example.com")
             inventory["development"]["hosts"].append("second.example.com")
             inventory["_meta"]["hostvars"]["second.example.com"] = {"ansible_host": "192.0.2.20"}
             with self.assertRaisesRegex(ValueError, "multiple inventory entries"):
@@ -173,13 +196,13 @@ class InventoryTargetTests(unittest.TestCase):
             path.write_text(json.dumps(event))
             with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(path),
                                        "DEPLOY_BOOTSTRAP_SECRET": "unused stale password"}, clear=True), \
-                    patch.object(DEPLOY, "resolve_target", return_value="192.0.2.20"), \
-                    patch.object(DEPLOY, "prepare_environment", return_value={"PATH": "/usr/bin"}) as prepare, \
+                    patch.object(DEPLOY, "resolve_target", return_value=("first.example.com", {"ansible_host": "192.0.2.20"})), \
+                    patch.object(DEPLOY, "prepare_inventory_environment", return_value={"PATH": "/usr/bin"}) as prepare, \
                     patch.object(DEPLOY, "configure_server", return_value=0) as configure:
                 self.assertEqual(DEPLOY.main(), 0)
                 configure.assert_called_once_with({"PATH": "/usr/bin"}, "manual password placeholder")
-                inputs = prepare.call_args.args[0]["inputs"]
-                self.assertEqual(inputs["server_address"], "192.0.2.20")
+                self.assertEqual(prepare.call_args.args[:2], ("first.example.com", {"ansible_host": "192.0.2.20"}))
+                inputs = prepare.call_args.kwargs["inputs"]
                 self.assertEqual(inputs["bootstrap_user"], "debian")
 
 
@@ -423,8 +446,8 @@ class CredentialPreparationTests(unittest.TestCase):
             event = Path(temporary) / "event.json"
             event.write_text('{"inputs": {}}')
             with patch.dict(os.environ, {"GITHUB_EVENT_PATH": str(event)}, clear=True), \
-                    patch.object(DEPLOY, "resolve_target", return_value="192.0.2.10"), \
-                    patch.object(DEPLOY, "prepare_environment", return_value={"PATH": "/usr/bin"}), \
+                    patch.object(DEPLOY, "resolve_target", return_value=("dev01", {"ansible_host": "192.0.2.10"})), \
+                    patch.object(DEPLOY, "prepare_inventory_environment", return_value={"PATH": "/usr/bin"}), \
                     patch.object(DEPLOY, "configure_server", return_value=4) as configure:
                 self.assertEqual(DEPLOY.main(), 4)
                 configure.assert_called_once_with({"PATH": "/usr/bin"}, "")

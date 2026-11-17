@@ -17,7 +17,9 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: requirements-dev.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
       - name: Install validation tools
         run: scripts/setup
       - name: Run unit, lint, syntax, and inventory checks
@@ -46,15 +48,42 @@ jobs:
           CONTAINER_TEST_IMAGE: localhost/ansible-playbooks-test:local
         run: scripts/test-container
 
+  tools:
+    name: Full host and toolchain tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install validation tools
+        run: scripts/setup
+      - name: Cache checksum-verified tool installers
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/tool-installers
+          key: ${{ runner.os }}-${{ runner.arch }}-tool-installers-${{ hashFiles('roles/dev_host/defaults/main.yml') }}
+      - name: Bootstrap and verify the disposable hosted VM
+        env:
+          TOOL_INSTALLER_CACHE: ${{ runner.temp }}/tool-installers
+        run: scripts/test-vm
+
   validate:
     if: ${{ always() }}
-    needs: [checks, ssh]
+    needs: [checks, ssh, tools]
     runs-on: ubuntu-latest
     steps:
       - name: Require all verification jobs to pass
         env:
           CHECKS_RESULT: ${{ needs.checks.result }}
           SSH_RESULT: ${{ needs.ssh.result }}
+          TOOLS_RESULT: ${{ needs.tools.result }}
         run: |
           test "$CHECKS_RESULT" = success
           test "$SSH_RESULT" = success
+          test "$TOOLS_RESULT" = success

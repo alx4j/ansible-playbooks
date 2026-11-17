@@ -54,6 +54,7 @@
         src: moshi-hook.service.j2
         dest: "{{ dev_host_home }}/.config/systemd/user/moshi-hook.service"
         mode: "0644"
+      register: dev_host_moshi_unit
       notify: Restart Moshi user service
 
     - name: Enable and start Moshi
@@ -62,4 +63,4 @@
         scope: user
         enabled: true
         state: started
-        daemon_reload: true
+        daemon_reload: "{{ dev_host_moshi_unit.changed }}"
