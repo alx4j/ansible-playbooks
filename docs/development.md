@@ -81,5 +81,7 @@ not pair a phone or send notifications.
 The disposable VM setup clears the hosted runner's global `XDG_CONFIG_HOME` and
 `XDG_RUNTIME_DIR` assignments so fixture accounts and SSH logins use their own
 home and runtime directories.
+It also waits for initial APT update and upgrade jobs before recording service
+timestamps, so background package upgrades do not overlap the convergence check.
 
 Doppler unit tests exercise the Unix protocol, caller UID checks, selected-secret HTTP requests, safe errors, aliases, and command environment filtering using synthetic values. The VM job encrypts a synthetic token through the production role, checks root-only storage and service credentials, denies unrelated users, requires no service restart on an unchanged run, restarts without the controller token, and rotates the token. It does not use a real Doppler account or prove production API authentication.
