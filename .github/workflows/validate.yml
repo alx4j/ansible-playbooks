@@ -66,7 +66,7 @@ jobs:
       - name: Install validation tools
         run: scripts/setup
       - name: Cache checksum-verified tool installers
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/tool-installers
           key: ${{ runner.os }}-${{ runner.arch }}-tool-installers-${{ hashFiles('roles/dev_host/defaults/main.yml') }}
