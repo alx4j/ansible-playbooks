@@ -14,6 +14,9 @@ image="localhost/ansible-playbooks-test:local"
   "$image" bash -euo pipefail -c '
     groupadd ansibletest
     useradd -m -g ansibletest -s /bin/bash ansibletest
+    ansible-playbook -i localhost, tests/tokeneconomizer.yml --check
+    test ! -e /home/ansibletest/.tokeneconomizer
+    test ! -e /home/ansibletest/.local/share/tokeneconomizer-source
     runuser -u ansibletest -- python3 tests/projects.py -v
     runuser -u ansibletest -- python3 tests/prepare-tools.py
     ansible-playbook -i localhost, tests/tools.yml
@@ -25,6 +28,7 @@ image="localhost/ansible-playbooks-test:local"
     python3 -c '\''import re; from pathlib import Path; s=Path("/tmp/second-run.log").read_text(); assert re.search(r"localhost\s+:.*changed=0\s+unreachable=0\s+failed=0", s), "Tool installation did not converge"'\''
     runuser -u ansibletest -- python3 tests/java-shell.py
     runuser -u ansibletest -- python3 tests/toolchain-shell.py
+    runuser -u ansibletest -- python3 tests/tokeneconomizer.py
     runuser -u ansibletest -- python3 tests/herdr.py
     runuser -u ansibletest -- python3 tests/herdr.py --cleanup
   '

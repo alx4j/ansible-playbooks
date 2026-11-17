@@ -20,3 +20,7 @@
       ansible.builtin.import_role:
         name: dev_host
         tasks_from: user_tools
+
+    - name: Install TokenEconomizer with the production role
+      ansible.builtin.import_role:
+        name: tokeneconomizer

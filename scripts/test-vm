@@ -96,6 +96,7 @@ assert re.search(r"vm\s+:.*changed=0\s+unreachable=0\s+failed=0", output), "Full
 PY
 run_tool_test tests/java-shell.py
 run_tool_test tests/toolchain-shell.py
+run_tool_test tests/tokeneconomizer.py
 run_tool_test tests/herdr.py
 run_tool_test tests/herdr.py --cleanup
 sudo env "PATH=$PATH" python3 tests/vm-state.py | tee "$vm_dir/state-after.json" > /dev/null

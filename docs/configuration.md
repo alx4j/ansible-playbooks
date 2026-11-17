@@ -91,6 +91,7 @@ The `site` play verifies development-user login and sudo before making SSH restr
 - A private projects directory under the user's home. Existing contents are preserved; changing the configured name creates the new directory and leaves the old one in place.
 - [Work repositories](work-repositories.md): clone missing GitHub repositories selected by `PROJECTS_TOPIC` (default `work`), preserve existing checkouts, and archive inactive managed repositories after confirmed topic removal.
 - Codex, Moshi, and Codex hooks, with actual installed-version checks. User lingering and `moshi-hook.service` keep the hook daemon running, with its socket in the development account's runtime directory. An unpaired daemon does not establish a working phone connection.
+- [TokenEconomizer](tokeneconomizer.md) for Codex, with a pinned source revision, a self-contained plugin, and configurable global defaults. Repository state and unrelated settings are preserved.
 - Herdr with a checksum-pinned binary, Bun, and the window-title plugin for readable Moshi session labels. PATH setup supports Moshi's noninteractive SSH discovery. See [Herdr and Moshi](herdr.md) to start workspaces and pair a phone.
 - When `DOPPLER_TOKEN` is supplied, a separate [Doppler role](doppler.md) installs an isolated secret service, encrypted credential, and the Codex skill wrapper. It preserves existing private profile state outside the skill package.
 - The Mosh UDP rule for `60000:61000`. UFW activation and its default policy remain unchanged unless firewall activation is explicitly enabled.
@@ -175,7 +176,39 @@ codex mcp login clickup --no-browser
 
 Register the ClickUp MCP server in Codex configuration before login. OAuth credentials are not managed by these playbooks.
 
-Complete Moshi pairing in your terminal through its supported app/CLI flow. The playbook does not place pairing tokens in process arguments or repeat pairing during routine runs. `moshi-hook host setup` offers a QR-based flow; review its proposed host changes separately.
+### Pair Moshi with the QR code
+
+From an existing SSH connection as the development account, run:
+
+```bash
+moshi-hook host setup
+```
+
+In the phone app, choose **Easy Pair** and scan the QR displayed in that terminal.
+Review the setup's proposed host changes. Moshi generates a private key on the
+phone and installs only its public key into the account's
+`~/.ssh/authorized_keys`. The saved connection can then use SSH or Mosh; Mosh
+still authenticates through SSH before switching terminal traffic to UDP.
+
+The QR is a temporary access credential: anyone who scans it before expiry can
+claim SSH access. Display it in your own terminal, never in GitHub Actions logs,
+job summaries, artifacts, or repository files. Pairing is an interactive
+post-bootstrap step and is not repeated by routine Ansible runs. Existing SSH
+keys are preserved, including the key installed through Easy Pair.
+
+Run `moshi-hook doctor` afterward. SSH connection pairing and agent-hook pairing
+are distinct; if the doctor reports missing hook pairing, complete the app's
+Agent Hooks pairing flow too. See [Moshi Easy Pair](https://getmoshi.app/docs/install#easy-pair-the-host)
+and [the distinction between pairing flows](https://getmoshi.app/docs/skill#host-readiness).
+
+### Approve TokenEconomizer hooks
+
+Start `codex` in a project, review TokenEconomizer in the hook prompt or `/hooks`,
+then exit and start a new session. Enter `$tokeneconomizer:status` in Codex to
+verify it. Ansible installs the plugin without bypassing hook approval. See
+[TokenEconomizer setup and settings](tokeneconomizer.md).
+
+### Keep Moshi sessions associated with their terminals
 
 Interactive Bash shells alias `codex` to `codex --no-daemon` so Moshi can associate
 each session with the correct terminal. This also applies to `codex resume`.

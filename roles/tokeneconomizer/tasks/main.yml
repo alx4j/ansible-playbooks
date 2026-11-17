@@ -1,0 +1,93 @@
+---
+- name: Validate TokenEconomizer inputs
+  ansible.builtin.assert:
+    that:
+      - tokeneconomizer_user is match('^[a-z_][a-z0-9_-]*$')
+      - tokeneconomizer_user != 'root'
+      - tokeneconomizer_home == '/home/' ~ tokeneconomizer_user
+      - tokeneconomizer_revision is match('^[0-9a-f]{40}$')
+      - tokeneconomizer_microskills in ['off', 'envfacts', 'on']
+      - tokeneconomizer_toolprune in ['off', 'propose', 'auto']
+      - tokeneconomizer_loopguard in ['off', 'nudge']
+    fail_msg: Select a pinned commit and supported TokenEconomizer settings for the development account.
+
+- name: Create the root-owned TokenEconomizer helper directory
+  ansible.builtin.file:
+    path: /usr/local/lib/tokeneconomizer
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the TokenEconomizer reconciliation helper
+  ansible.builtin.copy:
+    src: install.py
+    dest: /usr/local/lib/tokeneconomizer/install.py
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Create the user's TokenEconomizer and Codex parent directories
+  ansible.builtin.file:
+    path: "{{ tokeneconomizer_home }}/{{ tokeneconomizer_directory }}"
+    state: directory
+    owner: "{{ tokeneconomizer_user }}"
+    group: "{{ tokeneconomizer_user }}"
+    mode: "0700"
+  loop:
+    - .local/share
+    - .local/state/tokeneconomizer-install
+    - .codex
+    - .tokeneconomizer
+  loop_control:
+    loop_var: tokeneconomizer_directory
+
+- name: Install and configure TokenEconomizer for the development account
+  when: not ansible_check_mode
+  become: true
+  become_user: "{{ tokeneconomizer_user }}"
+  environment:
+    HOME: "{{ tokeneconomizer_home }}"
+    CODEX_HOME: "{{ tokeneconomizer_home }}/.codex"
+    PATH: "{{ tokeneconomizer_home }}/.local/bin:/usr/local/bin:/usr/bin:/bin"
+  vars:
+    tokeneconomizer_checkout: "{{ tokeneconomizer_home }}/.local/share/tokeneconomizer-source"
+    tokeneconomizer_repository: https://github.com/microsoft/TokenEconomizer.git
+  block:
+    - name: Preserve an existing checkout that is not owned or has local changes
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /usr/local/lib/tokeneconomizer/install.py
+          - --check-checkout
+      changed_when: false
+
+    - name: Check out the pinned TokenEconomizer source
+      ansible.builtin.git:
+        repo: "{{ tokeneconomizer_repository }}"
+        dest: "{{ tokeneconomizer_checkout }}"
+        version: "{{ tokeneconomizer_revision }}"
+
+    - name: Record ownership of the managed source revision
+      ansible.builtin.copy:
+        content: "{{ {'repository': tokeneconomizer_repository, 'revision': tokeneconomizer_revision} | to_json }}\n"
+        dest: "{{ tokeneconomizer_checkout }}/.git/ansible-tokeneconomizer.json"
+        mode: "0600"
+
+    - name: Reconcile the bundled Codex plugin and managed global defaults
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - /usr/local/lib/tokeneconomizer/install.py
+          - --microskills
+          - "{{ tokeneconomizer_microskills }}"
+          - --toolprune
+          - "{{ tokeneconomizer_toolprune }}"
+          - --loopguard
+          - "{{ tokeneconomizer_loopguard }}"
+      register: tokeneconomizer_result
+      changed_when: tokeneconomizer_result.rc == 0 and (tokeneconomizer_result.stdout | from_json).changed
+
+    - name: Report TokenEconomizer installation state
+      ansible.builtin.debug:
+        msg: "{{ tokeneconomizer_result.stdout | from_json }}"
