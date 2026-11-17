@@ -32,6 +32,16 @@ sudo systemctl restart ssh.service
 python3 tests/vm-inventory.py "$vm_dir"
 ansible-playbook -i "$vm_dir/inventory.json" bootstrap.yml
 
+# Hosted workspaces may have private parent directories. Grant the fixture
+# account traversal and read access to the test inputs and Python environment.
+fixture_parent="$PWD"
+while [[ "$fixture_parent" != / ]]; do
+  sudo setfacl -m u:ansibletest:--x "$fixture_parent"
+  fixture_parent="$(dirname "$fixture_parent")"
+done
+sudo setfacl -R -m u:ansibletest:rX roles tests .venv .ansible
+sudo setfacl -m u:ansibletest:r ansible.cfg
+
 if [[ -n "${TOOL_INSTALLER_CACHE:-}" && -d "$TOOL_INSTALLER_CACHE" ]]; then
   sudo install -d -o ansibletest -g ansibletest -m 0700 /home/ansibletest/.cache/ansible-installers
   sudo cp -a "$TOOL_INSTALLER_CACHE/." /home/ansibletest/.cache/ansible-installers/
