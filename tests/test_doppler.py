@@ -6,11 +6,13 @@ import io
 import json
 import os
 from pathlib import Path
+import pwd
 import socket
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -31,6 +33,36 @@ CLIENT = load("doppler_client", WRAPPER)
 
 
 class DopplerTests(unittest.TestCase):
+    def test_service_remains_available_after_multiple_connections_and_disconnects(self):
+        with tempfile.TemporaryDirectory(prefix="doppler-service-") as directory:
+            credential = Path(directory) / "doppler_token"
+            credential.write_text("fixture-bootstrap")
+            path = str(Path(directory) / "socket")
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+                listener.bind(path)
+                listener.listen()
+                launcher = """import os, sys
+os.dup2(int(sys.argv[1]), 3)
+os.set_inheritable(3, True)
+os.environ['LISTEN_PID'] = str(os.getpid())
+os.execv(sys.executable, [sys.executable, sys.argv[2], '--client-user', sys.argv[3]])
+"""
+                process = subprocess.Popen([sys.executable, "-c", launcher, str(listener.fileno()),
+                                            str(FILES / "broker.py"), pwd.getpwuid(os.getuid()).pw_name],
+                                           pass_fds=(listener.fileno(),), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                           env={"PATH": os.defpath, "CREDENTIALS_DIRECTORY": directory, "LISTEN_FDS": "1"})
+                try:
+                    for _ in range(4):
+                        self.assertEqual(CLIENT.request(path, {"operation": "ping"}), {"ok": True})
+                        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as abandoned:
+                            abandoned.connect(path)
+                        time.sleep(0.02)
+                    self.assertIsNone(process.poll(), "Service exited between requests")
+                finally:
+                    process.terminate()
+                    output, errors = process.communicate(timeout=5)
+                    self.assertNotIn(b"fixture-bootstrap", output + errors)
+
     @contextmanager
     def server(self, fetch=lambda token, names: {name: "fixture-value" for name in names}, uid=None):
         with tempfile.TemporaryDirectory(prefix="doppler-test-") as directory:

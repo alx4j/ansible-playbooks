@@ -112,5 +112,5 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
-        sys.exit("Doppler service could not start; check its credential, account, and socket unit.")
+    except Exception as error:
+        sys.exit(f"Doppler service stopped ({type(error).__name__}); check its credential, account, and socket unit.")

@@ -72,7 +72,10 @@ PY
 run_tool_test tests/java-shell.py
 run_tool_test tests/toolchain-shell.py
 sudo env "PATH=$PATH" python3 tests/vm-state.py | tee "$vm_dir/state-after.json" > /dev/null
-diff -u "$vm_dir/state-before.json" "$vm_dir/state-after.json"
+if ! diff -u "$vm_dir/state-before.json" "$vm_dir/state-after.json"; then
+  sudo journalctl -u doppler-secrets.service --lines=40 --no-pager
+  exit 1
+fi
 
 # Restart without the controller token, then rotate it through the production role.
 env -u DOPPLER_TOKEN sudo systemctl restart doppler-secrets.service
