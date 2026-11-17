@@ -97,6 +97,8 @@ def main():
                  "tasks": [
                      {"name": "Create the production projects directory", "ansible.builtin.import_role":
                       {"name": "dev_host", "tasks_from": "projects"}},
+                     {"name": "Install shared GitHub access", "ansible.builtin.import_role":
+                      {"name": "github_access", "tasks_from": "setup"}},
                      {"name": "Apply the production repository setup", "ansible.builtin.import_role":
                       {"name": "work_repositories", "tasks_from": "setup"}}]}]
         playbook = root / "setup.yml"
@@ -109,6 +111,9 @@ def main():
             if iteration:
                 assert re.search(r"localhost\s+:.*changed=0\s+unreachable=0\s+failed=0", result.stdout), result.stdout
         home = Path("/home/worktest")
+        legacy_trust = Path("/usr/local/lib/work-repositories/github_known_hosts")
+        assert legacy_trust.is_symlink()
+        assert legacy_trust.resolve() == Path("/usr/local/lib/github-access/github_known_hosts")
         subprocess.run(["runuser", "-u", "worktest", "--", "python3", str(Path(__file__).resolve()), "--key"], check=True)
         key = home / ".ssh/id_ed25519_github_work"
         assert key.stat().st_mode & 0o777 == 0o600

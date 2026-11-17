@@ -1,0 +1,16 @@
+---
+- name: Create the root-owned credential client directory
+  ansible.builtin.file:
+    path: /usr/local/lib/doppler-secrets
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the credential client at a stable automation path
+  ansible.builtin.copy:
+    src: skill/scripts/doppler.py
+    dest: /usr/local/lib/doppler-secrets/client.py
+    owner: root
+    group: root
+    mode: "0644"

@@ -42,7 +42,8 @@ assert runtime.read_bytes() == expected, "The running service did not load the c
 socket = Path("/run/doppler-secrets.sock")
 assert socket.is_socket() and socket.stat().st_uid == 0
 assert socket.stat().st_gid == account.pw_gid and stat.S_IMODE(socket.stat().st_mode) == 0o660
-wrapper = Path(account.pw_dir) / ".codex/skills/doppler-secrets/scripts/doppler.py"
+wrapper = Path("/usr/local/lib/doppler-secrets/client.py")
+assert wrapper.stat().st_uid == 0 and wrapper.stat().st_mode & 0o022 == 0
 command("runuser", "-u", "ansibletest", "--", "/usr/bin/python3", str(wrapper), "doctor", "--offline")
 # The initial fixture administrator has neither the socket group nor the allowed peer UID.
 result = subprocess.run(["runuser", "-u", "ansibleinitial", "--", "/usr/bin/python3", "-c",

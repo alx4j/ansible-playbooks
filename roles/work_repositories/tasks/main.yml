@@ -11,7 +11,7 @@
   ansible.builtin.command:
     argv:
       - /usr/bin/python3
-      - "{{ work_repositories_home }}/.codex/skills/doppler-secrets/scripts/doppler.py"
+      - /usr/local/lib/doppler-secrets/client.py
       - run
       - --map
       - "{{ work_repositories_github_secret }}=GITHUB_TOKEN"

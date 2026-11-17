@@ -48,12 +48,14 @@ service; application secrets are available to the command that requests them.
 
 ## Use the wrapper
 
-Ansible installs the skill at `~/.codex/skills/doppler-secrets`. Its wrapper
-retains the normal `run`, `check`, `doctor`, `paths`, `--require`, `--map`, and
+The [toolkit's `common` plugin](agent-toolkit.md) supplies the skill. Resolve its
+wrapper relative to the installed skill directory. For automation and direct
+commands, Ansible also installs a root-owned client at a stable path. Both use
+the same `run`, `check`, `doctor`, `paths`, `--require`, `--map`, and
 environment-filtering interface:
 
 ```bash
-python3 ~/.codex/skills/doppler-secrets/scripts/doppler.py run \
+python3 /usr/local/lib/doppler-secrets/client.py run \
   --map NOTION_API_TOKEN=NOTION_TOKEN \
   --clean-env --inherit PATH --inherit HOME -- \
   /usr/bin/node /path/to/trusted-client.mjs
@@ -71,8 +73,9 @@ stdin, working directory, umask, signals, and exit status.
 
 The managed wrapper uses the local service. It does not enroll or restore local
 CLI profiles; existing private profiles outside the skill package remain
-untouched and unused. Ansible owns the deployed skill files. Keep changes to
-this package in the repository so future runs do not overwrite local edits.
+untouched and unused. Develop the plugin skill in the editable toolkit checkout.
+When toolkit management is disabled, the Doppler role installs the standalone
+skill at `~/.codex/skills/doppler-secrets` as a fallback.
 
 ## Restart and rotation
 

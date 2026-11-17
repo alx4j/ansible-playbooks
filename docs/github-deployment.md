@@ -37,6 +37,13 @@ server's generated public key. Disable `work_repositories_enabled` in inventory
 if this host should not synchronize projects. The GitHub token stays in Doppler;
 do not add another workflow secret for it.
 
+The [Codex toolkit](agent-toolkit.md) uses the same access to update its managed
+checkout and install plugins. Include `alx4j-agent-toolkit` in the GitHub token's
+repository access. Toolkit installation is independent of project topics; add
+the configured `PROJECTS_TOPIC` to that repo only when you also want an editable
+working copy. Disable `agent_toolkit_enabled` in inventory to leave toolkit
+installation unmanaged on a host.
+
 ## 2. Establish access
 
 Open **Actions → Bootstrap VPS → Run workflow**, select `main`, and fill in:

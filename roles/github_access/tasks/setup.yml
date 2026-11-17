@@ -1,0 +1,29 @@
+---
+- name: Create the root-owned GitHub helper directory
+  ansible.builtin.file:
+    path: /usr/local/lib/github-access
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the shared GitHub client and verified host key
+  ansible.builtin.copy:
+    src: "{{ github_access_file }}"
+    dest: "/usr/local/lib/github-access/{{ github_access_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - github_access.py
+    - github_known_hosts
+  loop_control:
+    loop_var: github_access_file
+
+- name: Create the development account's private SSH directory
+  ansible.builtin.file:
+    path: "{{ github_access_home }}/.ssh"
+    state: directory
+    owner: "{{ github_access_user }}"
+    group: "{{ github_access_user }}"
+    mode: "0700"

@@ -1,0 +1,8 @@
+---
+- name: Install the stable credential client for automation
+  ansible.builtin.import_role:
+    name: doppler_secrets
+    tasks_from: client
+
+- name: Install shared GitHub access prerequisites
+  ansible.builtin.import_tasks: setup.yml
