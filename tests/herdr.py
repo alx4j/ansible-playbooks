@@ -47,7 +47,8 @@ if mode == ["--prepare"]:
                                             PATH=str(home / ".local/bin") + ":/usr/local/bin:/usr/bin:/bin"),
                                    start_new_session=True)
     for _ in range(40):
-        assert process.poll() is None, "Herdr exited; inspect ~/.herdr-test.log"
+        if process.poll() is not None:
+            raise AssertionError(f"Herdr exited ({process.returncode}):\n{(home / '.herdr-test.log').read_text()}")
         if any(item["name"] == session and item["running"] for item in sessions()):
             break
         time.sleep(0.25)
