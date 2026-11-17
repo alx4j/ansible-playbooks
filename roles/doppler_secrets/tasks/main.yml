@@ -102,14 +102,27 @@
     state: "{{ 'restarted' if doppler_secrets_socket_unit.changed else 'started' }}"
     daemon_reload: "{{ doppler_secrets_socket_unit.changed or doppler_secrets_service_unit.changed }}"
 
-- name: Start the secret service and apply changed code or credentials
-  ansible.builtin.systemd_service:
-    name: doppler-secrets.service
-    enabled: true
-    state: >-
-      {{ 'restarted' if (doppler_secrets_broker.changed or doppler_secrets_service_unit.changed
-         or doppler_secrets_socket_unit.changed or doppler_secrets_credential.stdout | default('') == 'changed')
-         else 'started' }}
+- name: Apply secret service changes
+  vars:
+    doppler_secrets_restart_required: >-
+      {{ doppler_secrets_broker.changed or doppler_secrets_service_unit.changed
+         or doppler_secrets_socket_unit.changed or doppler_secrets_credential.stdout | default('') == 'changed' }}
+  block:
+    # systemd also counts planned maintenance toward the start limit.
+    - name: Allow a fresh start after changing code or credentials
+      when: doppler_secrets_restart_required
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - reset-failed
+          - doppler-secrets.service
+      changed_when: true
+
+    - name: Start the secret service and apply changed code or credentials
+      ansible.builtin.systemd_service:
+        name: doppler-secrets.service
+        enabled: true
+        state: "{{ 'restarted' if doppler_secrets_restart_required else 'started' }}"
 
 - name: Create the managed Doppler skill directory
   ansible.builtin.file:

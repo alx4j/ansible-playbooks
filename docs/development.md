@@ -72,4 +72,16 @@ Docker can run the same command. The full-host job runs `scripts/test-vm`, which
 
 The VM test covers real systemd and firewall configuration on Ubuntu AMD64. ARM64 execution, provider networking, and phone pairing remain outside these tests. Containers provide Debian AMD64 coverage. The hosted VM is discarded after the job; never adapt this test to an existing development or production host.
 
+Both tool suites start a real Herdr session, discover its workspace through
+Moshi, and check Moshi's context from inside a pane. The session's process and
+workspace must survive an unchanged Ansible run. The VM also checks Herdr and
+Moshi discovery through a real noninteractive SSH connection. These checks do
+not pair a phone or send notifications.
+
+The disposable VM setup clears the hosted runner's global `XDG_CONFIG_HOME` and
+`XDG_RUNTIME_DIR` assignments so fixture accounts and SSH logins use their own
+home and runtime directories.
+It also waits for initial APT update and upgrade jobs before recording service
+timestamps, so background package upgrades do not overlap the convergence check.
+
 Doppler unit tests exercise the Unix protocol, caller UID checks, selected-secret HTTP requests, safe errors, aliases, and command environment filtering using synthetic values. The VM job encrypts a synthetic token through the production role, checks root-only storage and service credentials, denies unrelated users, requires no service restart on an unchanged run, restarts without the controller token, and rotates the token. It does not use a real Doppler account or prove production API authentication.

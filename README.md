@@ -1,6 +1,6 @@
 # Development VPS playbooks
 
-Configure a development VPS with a dedicated account, sudo and SSH access, automatic updates, Podman, Java through SDKMAN and jenv, Gradle, Go, Rust/Cargo, Codex, Moshi, and Mosh. Development commands are available on the user's PATH, with a configurable projects directory in their home.
+Configure a development VPS with a dedicated account, sudo and SSH access, automatic updates, Podman, Java through SDKMAN and jenv, Gradle, Go, Rust/Cargo, Codex, Herdr, Moshi, and Mosh. Development commands are available on the user's PATH, with a configurable projects directory in their home.
 
 The managed host needs Debian/Ubuntu, Python 3, OpenSSH, APT, and systemd. The configuration supports AMD64 and ARM64; tests exercise Debian 13 containers and an Ubuntu 24.04 VM on AMD64. GitHub Actions provides the controller, so you do not need Ansible installed on your workstation.
 
@@ -28,6 +28,7 @@ The setup workflow runs these stages automatically. They are also available for 
 - [Development and local runs](docs/development.md): controller setup, local commands, and verification.
 - [Dependency and tool updates](docs/updates.md): Dependabot, version pins, checksums, and the upgrade procedure.
 - [Doppler secrets](docs/doppler.md): encrypted token setup and selected secrets for normal SSH/tmux/Herdr sessions.
+- [Herdr and Moshi](docs/herdr.md): persistent workspaces, phone pairing, and session discovery.
 - [Setup history](ansible.md): the historical commands that informed these playbooks.
 
 ## Repository map

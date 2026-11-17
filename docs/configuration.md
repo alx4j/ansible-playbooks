@@ -73,7 +73,8 @@ The inventory exposes `sudo_user` for the account name. Role inputs use the `dev
 | `dev_host_rust_version` | Exact default Rust toolchain, including `rustc` and Cargo. |
 | `dev_host_rustup_version`, `dev_host_rustup_checksums` | Exact rustup installer release and architecture-specific SHA-256 values. Change these together. |
 | `dev_host_projects_dir` | Projects folder name under the user's home; reads controller `PROJECTS_DIR`, defaulting to `projects`. |
-| `dev_host_gradle_version`, `dev_host_codex_version`, `dev_host_moshi_version` | Override the pinned tool versions. |
+| `dev_host_gradle_version`, `dev_host_codex_version` | Override the pinned tool versions. |
+| `dev_host_herdr_version`, `dev_host_herdr_checksums` | Select Herdr and the matching Linux release checksums. |
 | `dev_host_codex_config_source` | Seed `.codex/config.toml` only if absent. The application and hook installer subsequently own it. |
 | `dev_host_codex_instructions_source` | Manage `.codex/AGENTS.md` from a supplied controller-side file. |
 
@@ -89,6 +90,7 @@ The `site` play verifies development-user login and sudo before making SSH restr
 - Zulu Java and Gradle through SDKMAN, Go from verified official archives, and Rust/Cargo through rustup, all under the development account. jenv selects Java. One shared shell environment is loaded from `.profile`, `.bashrc`, and any existing `.bash_profile` or `.bash_login`. Existing login customization is preserved.
 - A private projects directory under the user's home. Existing contents are preserved; changing the configured name creates the new directory and leaves the old one in place.
 - Codex, Moshi, and Codex hooks, with actual installed-version checks. User lingering and `moshi-hook.service` keep the hook daemon running, with its socket in the development account's runtime directory. An unpaired daemon does not establish a working phone connection.
+- Herdr with a checksum-pinned binary and PATH setup for Moshi's noninteractive SSH discovery. See [Herdr and Moshi](herdr.md) to start workspaces and pair a phone.
 - When `DOPPLER_TOKEN` is supplied, a separate [Doppler role](doppler.md) installs an isolated secret service, encrypted credential, and the Codex skill wrapper. It preserves existing private profile state outside the skill package.
 - The Mosh UDP rule for `60000:61000`. UFW activation and its default policy remain unchanged unless firewall activation is explicitly enabled.
 - `PermitRootLogin no`, `PasswordAuthentication no`, and `KbdInteractiveAuthentication no`. The SSH validator expands the main configuration's Includes and checks syntax and effective global values before replacing the drop-in. Handlers validate and reload; a fresh connection then verifies login and sudo. Review Match-specific policies for relevant client contexts.
@@ -133,6 +135,10 @@ cargo --version
 
 Services, scheduled jobs, and bare SSH commands need an explicit environment or a shell that loads this file. Shell startup configuration does not change system-wide PATH or already-running processes.
 
+For Bash over SSH, a separate block at the start of `.bashrc` exposes `~/.local/bin`
+before the noninteractive return. This lets Moshi discover Herdr and its own CLI
+without loading the full SDK environment.
+
 ## Projects directory
 
 Set the optional **`PROJECTS_DIR` variable in GitHub's `development` environment** to a folder name such as `code`. Local Ansible runs read the same controller environment variable. Unset or empty values use `projects`; a host inventory can override `dev_host_projects_dir`.
@@ -151,7 +157,11 @@ Follow the [update procedure](updates.md) when changing pins or reviewing Depend
 
 Java and Gradle use SDKMAN checksum validation, jenv is pinned to a release commit, Go archives and the rustup installer use reviewed SHA-256 pins, and rustup verifies its toolchain downloads. Codex's installer verifies release assets, and Moshi requires a release checksum manifest. Broken installations fail visibly. Review CLI compatibility when changing versions, particularly Moshi's JSON hook diagnostics.
 
-APT packages and application self-updaters are not frozen by these pins. The next Ansible run reconciles the selected tool versions. If strict version ownership is needed, configure application updaters through their supported settings.
+Moshi is not pinned: fresh installations use the current release, verified
+against its checksum manifest. Existing installations and automatic-update
+settings are preserved, so reruns do not downgrade Moshi after it updates itself.
+APT packages and other application self-updaters are not frozen by the remaining
+pins; the next Ansible run reconciles those selected tool versions.
 
 ## Account onboarding
 

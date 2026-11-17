@@ -54,7 +54,11 @@ dev_host_rustup_checksums:
   x86_64: sha256:b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
   aarch64: sha256:9f608c142e0e38a78957d0661ba1dfaf0b6fb37184cfaa4b9a0aa57af6184282
 dev_host_codex_version: "0.169.0"
-dev_host_moshi_version: "0.4.57"
+dev_host_herdr_version: "0.9.5"
+# SHA-256 values from https://herdr.dev/latest.json for this release.
+dev_host_herdr_checksums:
+  x86_64: sha256:14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d
+  aarch64: sha256:17d7536f2da50859523680ef279dffcac8e4a235f4e46fe8da6c2ec44141897c
 # Fail closed if a mutable upstream installer changes before review.
 dev_host_sdkman_installer_checksum: sha256:af65b33eed01d4fce1beb189a91710f6f22c543eb6fa82df99deddacbc399375
 dev_host_codex_installer_checksum: sha256:5a8eea5c3716b555fd8e539db7e5b0e7470bcee5693191b4758a0de373624a70

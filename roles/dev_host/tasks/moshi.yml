@@ -4,44 +4,47 @@
     path: "{{ dev_host_home }}/.local/bin/moshi-hook"
   register: dev_host_moshi_binary
 
-- name: Read the installed Moshi version
-  when: dev_host_moshi_binary.stat.exists
-  ansible.builtin.command:
-    argv:
-      - "{{ dev_host_home }}/.local/bin/moshi-hook"
-      - --version
-  register: dev_host_moshi_current
-  changed_when: false
-  check_mode: false
-
-- name: Install the selected Moshi release
-  when: dev_host_moshi_current.stdout | default('') != 'moshi-hook version ' ~ dev_host_moshi_version
+- name: Install the current Moshi release when absent
+  when: not dev_host_moshi_binary.stat.exists
   vars:
     dev_host_moshi_asset: "moshi-hook_Linux_{{ dev_host_moshi_architectures[ansible_facts['architecture']] }}.tar.gz"
-    dev_host_moshi_release_url: "https://cdn.getmoshi.app/hook/v{{ dev_host_moshi_version }}"
+    dev_host_moshi_release: "{{ dev_host_moshi_latest.content | trim }}"
+    dev_host_moshi_release_url: "https://cdn.getmoshi.app/hook/{{ dev_host_moshi_release }}"
   block:
+    - name: Resolve the current stable Moshi release
+      ansible.builtin.uri:
+        url: https://cdn.getmoshi.app/hook/latest/version.txt
+        return_content: true
+      register: dev_host_moshi_latest
+      check_mode: false
+
+    - name: Validate the Moshi release identifier
+      ansible.builtin.assert:
+        that:
+          - dev_host_moshi_release is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
+
     - name: Download the checksum-verified Moshi archive
       ansible.builtin.get_url:
         url: "{{ dev_host_moshi_release_url }}/{{ dev_host_moshi_asset }}"
-        dest: "{{ dev_host_home }}/.cache/ansible-installers/moshi-{{ dev_host_moshi_version }}.tar.gz"
+        dest: "{{ dev_host_home }}/.cache/ansible-installers/moshi-{{ dev_host_moshi_release }}.tar.gz"
         checksum: "sha256:{{ dev_host_moshi_release_url }}/checksums.txt"
         mode: "0600"
 
     - name: Create a versioned Moshi extraction directory
       ansible.builtin.file:
-        path: "{{ dev_host_home }}/.local/share/moshi/{{ dev_host_moshi_version }}"
+        path: "{{ dev_host_home }}/.local/share/moshi/{{ dev_host_moshi_release }}"
         state: directory
         mode: "0700"
 
     - name: Extract the verified Moshi release
       ansible.builtin.unarchive:
-        src: "{{ dev_host_home }}/.cache/ansible-installers/moshi-{{ dev_host_moshi_version }}.tar.gz"
-        dest: "{{ dev_host_home }}/.local/share/moshi/{{ dev_host_moshi_version }}"
+        src: "{{ dev_host_home }}/.cache/ansible-installers/moshi-{{ dev_host_moshi_release }}.tar.gz"
+        dest: "{{ dev_host_home }}/.local/share/moshi/{{ dev_host_moshi_release }}"
         remote_src: true
 
     - name: Install the Moshi binary
       ansible.builtin.copy:
-        src: "{{ dev_host_home }}/.local/share/moshi/{{ dev_host_moshi_version }}/moshi-hook"
+        src: "{{ dev_host_home }}/.local/share/moshi/{{ dev_host_moshi_release }}/moshi-hook"
         dest: "{{ dev_host_home }}/.local/bin/moshi-hook"
         remote_src: true
         mode: "0755"
@@ -61,11 +64,11 @@
   register: dev_host_moshi_result
   changed_when: false
 
-- name: Require the requested Moshi version
+- name: Require a working Moshi CLI
   when: not ansible_check_mode
   ansible.builtin.assert:
     that:
-      - dev_host_moshi_result.stdout == 'moshi-hook version ' ~ dev_host_moshi_version
+      - dev_host_moshi_result.stdout is match('^moshi-hook version [0-9]+\.[0-9]+\.[0-9]+')
 
 - name: Inspect installed agent hooks without exposing account diagnostics
   when: not ansible_check_mode
