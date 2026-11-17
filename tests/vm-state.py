@@ -2,6 +2,7 @@
 
 import json
 import os
+from pathlib import Path
 import pwd
 import subprocess
 import sys
@@ -36,6 +37,8 @@ except AssertionError:
                    stdout=sys.stderr, stderr=sys.stderr, check=False)
     raise
 assert command(*user_systemctl, "is-enabled", "moshi-hook.service") == "enabled"
+socket = Path(f"/run/user/{account.pw_uid}/moshi-hook.sock")
+assert socket.is_socket() and socket.stat().st_uid == account.pw_uid, socket
 reload_timestamp = command(*user_systemctl, "show", "--property=GeneratorsStartTimestampMonotonic", "--value")
 restart_timestamp = command(*user_systemctl, "show", "moshi-hook.service", "--property=ActiveEnterTimestampMonotonic", "--value")
 assert reload_timestamp.isdigit() and int(reload_timestamp) > 0, reload_timestamp
