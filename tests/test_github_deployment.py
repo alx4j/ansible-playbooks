@@ -69,6 +69,12 @@ class GitHubDeploymentTests(unittest.TestCase):
             self.assertNotIn(name, env)
         self.hash.assert_not_called()
 
+    def test_missing_doppler_token_does_not_reuse_a_stale_forwarding_variable(self):
+        self.env.pop("DOPPLER_TOKEN")
+        self.env["DEPLOY_DOPPLER_TOKEN"] = "stale token placeholder"
+        env = DEPLOY.prepare_environment(self.event, self.env)
+        self.assertNotIn("DEPLOY_DOPPLER_TOKEN", env)
+
     def test_projects_directory_reaches_manual_and_automatic_playbooks(self):
         self.env["PROJECTS_DIR"] = "work-projects"
         environments = (
@@ -79,6 +85,19 @@ class GitHubDeploymentTests(unittest.TestCase):
             with patch.object(DEPLOY.subprocess, "run") as run:
                 DEPLOY.run_playbook(env, "site")
                 self.assertEqual(run.call_args.kwargs["env"]["PROJECTS_DIR"], "work-projects")
+
+    def test_doppler_token_reaches_only_the_site_playbook(self):
+        env = DEPLOY.prepare_environment(self.event, self.env)
+        for playbook in ("access", "bootstrap", "site"):
+            with self.subTest(playbook=playbook), patch.object(DEPLOY.subprocess, "run") as run:
+                DEPLOY.run_playbook(env, playbook)
+                child = run.call_args.kwargs["env"]
+                self.assertNotIn("DEPLOY_DOPPLER_TOKEN", child)
+                self.assertNotIn(self.env["DOPPLER_TOKEN"], child["DEPLOY_INVENTORY"])
+                if playbook == "site":
+                    self.assertEqual(child["DOPPLER_TOKEN"], self.env["DOPPLER_TOKEN"])
+                else:
+                    self.assertNotIn("DOPPLER_TOKEN", child)
 
     def test_valid_addresses_and_nondefault_port(self):
         self.env["DEPLOY_SSH_PORT"] = "2222"
@@ -499,8 +518,9 @@ class WorkflowMaskingTests(unittest.TestCase):
         self.assertEqual(automatic["if"], "github.event_name == 'workflow_run'")
         self.assertEqual(set(automatic["env"]), {
             "DEPLOY_KNOWN_HOSTS", "DEPLOY_SSH_PORT", "DEPLOY_SSH_PRIVATE_KEY", "DEPLOY_SUDO_USER", "SUDO_PASSWORD",
-            "PROJECTS_DIR",
+            "PROJECTS_DIR", "DOPPLER_TOKEN",
         })
+        self.assertEqual(automatic["env"]["DOPPLER_TOKEN"], "${{ secrets.DOPPLER_TOKEN }}")
         self.assertNotIn("BOOTSTRAP_", json.dumps(steps))
         self.assertEqual(steps[-1]["if"], "github.event_name == 'workflow_dispatch'")
 

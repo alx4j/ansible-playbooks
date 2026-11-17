@@ -27,6 +27,7 @@ The setup workflow runs these stages automatically. They are also available for 
 - [Configuration](docs/configuration.md): shared defaults, host overrides, ownership, and account onboarding.
 - [Development and local runs](docs/development.md): controller setup, local commands, and verification.
 - [Dependency and tool updates](docs/updates.md): Dependabot, version pins, checksums, and the upgrade procedure.
+- [Doppler secrets](docs/doppler.md): encrypted token setup and selected secrets for normal SSH/tmux/Herdr sessions.
 - [Setup history](ansible.md): the historical commands that informed these playbooks.
 
 ## Repository map
@@ -43,6 +44,7 @@ ansible-playbooks/
 │   ├── templates/                # Shell environment and service/configuration files
 │   ├── files/                    # SSH configuration validator
 │   └── handlers/                 # Reload or restart services after changes
+├── roles/doppler_secrets/        # Encrypted credential, isolated service, and Codex skill wrapper
 ├── scripts/                      # Controller setup, workflow runner, and test entry points
 ├── tests/                        # Unit tests, container fixtures, and full VM checks
 ├── requirements.txt              # One Ansible core pin for controllers and test images

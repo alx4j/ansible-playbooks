@@ -29,6 +29,8 @@ result = {
     "raw_key_removed": "DEPLOY_SSH_PRIVATE_KEY" not in os.environ,
     "raw_password_removed": "DEPLOY_BOOTSTRAP_PASSWORD" not in os.environ,
     "raw_bootstrap_sudo_removed": "DEPLOY_BOOTSTRAP_BECOME_PASSWORD" not in os.environ,
+    "doppler_forwarding_removed": "DEPLOY_DOPPLER_TOKEN" not in os.environ,
+    "has_doppler_token": bool(os.environ.get("DOPPLER_TOKEN")),
     "has_bootstrap_hash": bool(os.environ.get("SUDO_PASSWORD_HASH")),
     "has_become_password": bool(os.environ.get("ANSIBLE_BECOME_PASS")),
     "become_is_initial_login": os.environ.get("ANSIBLE_BECOME_PASS") == "test bootstrap password placeholder",
@@ -108,6 +110,18 @@ class DeploymentTests(unittest.TestCase):
         self.assertNotIn("--check", calls[-1]["args"])
         self.assertTrue(calls[-1]["has_bootstrap_hash"])
         self.assertFalse(calls[-1]["has_become_password"])
+
+    def test_doppler_credential_is_confined_to_site_even_for_direct_calls(self):
+        for playbook in ("access", "bootstrap", "site"):
+            with self.subTest(playbook=playbook):
+                result, calls = self.run_deployment(DEPLOY_PLAYBOOK=playbook, DOPPLER_TOKEN="fixture-token",
+                                                    DEPLOY_DOPPLER_TOKEN="stale-forwarding-fixture")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                for call in calls:
+                    self.assertEqual(call["has_doppler_token"], playbook == "site")
+                    self.assertTrue(call["doppler_forwarding_removed"])
+                    self.assertNotIn("fixture-token", json.dumps(call))
+                self.calls.unlink()
 
     def test_password_bootstrap_without_private_key(self):
         result, calls = self.run_deployment(

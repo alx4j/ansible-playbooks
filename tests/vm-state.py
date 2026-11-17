@@ -43,4 +43,15 @@ reload_timestamp = command(*user_systemctl, "show", "--property=GeneratorsStartT
 restart_timestamp = command(*user_systemctl, "show", "moshi-hook.service", "--property=ActiveEnterTimestampMonotonic", "--value")
 assert reload_timestamp.isdigit() and int(reload_timestamp) > 0, reload_timestamp
 assert restart_timestamp.isdigit() and int(restart_timestamp) > 0, restart_timestamp
-print(json.dumps({"user_manager_reload": reload_timestamp, "moshi_start": restart_timestamp}, sort_keys=True))
+for unit in ("doppler-secrets.service", "doppler-secrets.socket"):
+    assert command("systemctl", "is-active", unit) == "active"
+    assert command("systemctl", "is-enabled", unit) == "enabled"
+automatic_restarts = command("systemctl", "show", "doppler-secrets.service", "--property=NRestarts", "--value")
+if automatic_restarts != "0":
+    subprocess.run(("journalctl", "-u", "doppler-secrets.service", "--lines=40", "--no-pager"),
+                   stdout=sys.stderr, stderr=sys.stderr, check=False)
+    raise AssertionError("The secret service exited unexpectedly and was automatically restarted")
+doppler_timestamp = command("systemctl", "show", "doppler-secrets.service", "--property=ActiveEnterTimestampMonotonic", "--value")
+assert doppler_timestamp.isdigit() and int(doppler_timestamp) > 0
+print(json.dumps({"user_manager_reload": reload_timestamp, "moshi_start": restart_timestamp,
+                  "doppler_start": doppler_timestamp}, sort_keys=True))

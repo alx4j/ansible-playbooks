@@ -155,11 +155,13 @@ def prepare_environment(event, environment):
         raise ValueError("Set verified ANSIBLE_KNOWN_HOSTS entries for the server.")
 
     # Do not forward unused credentials or the event-file path to Ansible.
-    for name in ("DOPPLER_TOKEN", "GITHUB_EVENT_PATH", "DEPLOY_BOOTSTRAP_PASSWORD",
+    for name in ("DOPPLER_TOKEN", "DEPLOY_DOPPLER_TOKEN", "GITHUB_EVENT_PATH", "DEPLOY_BOOTSTRAP_PASSWORD",
                  "DEPLOY_BOOTSTRAP_SECRET", "DEPLOY_BOOTSTRAP_BECOME_PASSWORD",
                  "SUDO_PASSWORD_HASH", "DEPLOY_PLAYBOOK"):
         env.pop(name, None)
     env["ANSIBLE_BECOME_PASS"] = sudo_password
+    if environment.get("DOPPLER_TOKEN"):
+        env["DEPLOY_DOPPLER_TOKEN"] = environment["DOPPLER_TOKEN"]
 
     host = {
         "ansible_host": address,
@@ -175,9 +177,14 @@ def prepare_environment(event, environment):
 
 
 def run_playbook(env, playbook, capture_output=False):
+    child_env = {**env, "DEPLOY_PLAYBOOK": playbook}
+    token = child_env.pop("DEPLOY_DOPPLER_TOKEN", "")
+    child_env.pop("DOPPLER_TOKEN", None)
+    if playbook == "site" and token:
+        child_env["DOPPLER_TOKEN"] = token
     return subprocess.run(
         [str(Path(__file__).with_name("deploy"))],
-        env={**env, "DEPLOY_PLAYBOOK": playbook},
+        env=child_env,
         text=True, capture_output=capture_output, check=False,
     )
 
