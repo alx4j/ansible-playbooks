@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -263,6 +264,21 @@ class WorkRepositoriesTests(unittest.TestCase):
         with (path / "tracked").open():
             self.assertIn("files open", SYNC.busy_reason(path, self.home))
 
+    def test_activity_reader_failure_preserves_checkout(self):
+        self.sync()
+        self.api.repositories[0]["topics"] = []
+        channel, reader = socket.socketpair(type=socket.SOCK_SEQPACKET)
+        with channel, reader:
+            reader.sendall(b"unexpected")
+            for disconnected in (False, True):
+                with self.subTest(disconnected=disconnected):
+                    if disconnected:
+                        reader.close()
+                    result = self.sync(activity=lambda path, home: SYNC.busy_reason(path, home, channel))
+                    self.assertEqual(result["skipped"], [{"repository": "fixture/one", "reason": SYNC.activity.UNKNOWN}])
+                    self.assertFalse(result["changed"])
+                    self.assertTrue((self.projects / "one/tracked").is_file())
+
     def test_origin_change_and_symlinks_preserve_everything(self):
         self.sync()
         path = self.projects / "one"
@@ -330,9 +346,9 @@ class WorkRepositoriesTests(unittest.TestCase):
         replies = [json.dumps({"sessions": [{"name": "work", "running": True}]}),
                    json.dumps({"result": {"workspaces": [{"worktree": None}]}}),
                    json.dumps({"result": {"panes": [{"foreground_cwd": str(path)}]}})]
-        with patch.object(SYNC, "process_activity", return_value=None), patch.object(SYNC.subprocess, "check_output", side_effect=replies):
+        with patch.object(SYNC.activity, "scan", return_value=None), patch.object(SYNC.subprocess, "check_output", side_effect=replies):
             self.assertIn("Herdr", SYNC.busy_reason(path, self.home))
-        with patch.object(SYNC, "process_activity", return_value=None), patch.object(SYNC.subprocess, "check_output", side_effect=OSError()):
+        with patch.object(SYNC.activity, "scan", return_value=None), patch.object(SYNC.subprocess, "check_output", side_effect=OSError()):
             self.assertIn("cannot verify", SYNC.busy_reason(path, self.home))
 
     def test_api_pagination_and_cross_origin_redirect_guard(self):

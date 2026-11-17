@@ -111,7 +111,11 @@ Discovery must finish every page before any repository operation begins.
 
 Moves are skipped when the development account has a process working in the
 checkout or holding files open, a running Herdr session references it, or Git has
-linked worktrees. If activity cannot be inspected, the checkout stays put.
+linked worktrees. During sync, a root process checks the account's working
+directories and open file descriptors, including those of protected processes
+such as the systemd user manager. The sync worker runs as the development
+account and receives only an activity result for a path under the projects
+directory. If inspection fails, the checkout stays put.
 These are conservative checks, not a lock against interactive users starting
 work afterward; remove the topic and close the workspace before the next sync.
 

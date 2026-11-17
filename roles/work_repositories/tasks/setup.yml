@@ -17,13 +17,18 @@
     group: root
     mode: "0755"
 
-- name: Install the repository synchronization helper
+- name: Install the repository synchronization helpers
   ansible.builtin.copy:
-    src: sync.py
-    dest: /usr/local/lib/work-repositories/sync.py
+    src: "{{ work_repositories_helper }}"
+    dest: "/usr/local/lib/work-repositories/{{ work_repositories_helper }}"
     owner: root
     group: root
     mode: "0644"
+  loop:
+    - sync.py
+    - process_activity.py
+  loop_control:
+    loop_var: work_repositories_helper
 
 - name: Preserve the host-key path recorded in existing Git checkouts
   ansible.builtin.file:

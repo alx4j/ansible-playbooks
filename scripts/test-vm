@@ -98,7 +98,7 @@ run_tool_test tests/java-shell.py
 run_tool_test tests/toolchain-shell.py
 run_tool_test tests/herdr.py
 run_tool_test tests/herdr.py --cleanup
-run_tool_test tests/project-workspaces.py
+sudo env "PATH=$PATH" python3 tests/project-workspaces.py
 sudo env "PATH=$PATH" python3 tests/vm-state.py | tee "$vm_dir/state-after.json" > /dev/null
 if ! diff -u "$vm_dir/state-before.json" "$vm_dir/state-after.json"; then
   sudo journalctl -u doppler-secrets.service -u apt-daily.service -u apt-daily-upgrade.service --lines=60 --no-pager

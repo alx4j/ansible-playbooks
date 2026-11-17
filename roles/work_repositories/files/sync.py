@@ -4,11 +4,13 @@
 import argparse
 import ctypes
 import fcntl
+from functools import partial
 import json
 import os
 from pathlib import Path
 import pwd
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -16,7 +18,10 @@ import time
 import uuid
 
 
-# The installed shared module is root-owned; -I excludes user Python paths.
+# Both installed module directories are root-owned; -I excludes user Python paths.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import process_activity as activity
+
 sys.path.insert(0, "/usr/local/lib/github-access")
 from github_access import ApiError, GitHub, Git as AccessGit, SyncError
 
@@ -96,34 +101,9 @@ def inside(path, root):
         return False
 
 
-def process_activity(path):
-    inaccessible = False
-    for process in Path("/proc").iterdir():
-        if not process.name.isdigit():
-            continue
-        try:
-            if process.stat().st_uid != os.getuid():
-                continue
-            if inside(os.readlink(process / "cwd"), path):
-                return "a process is working in this repository"
-            for descriptor in (process / "fd").iterdir():
-                try:
-                    if inside(os.readlink(descriptor), path):
-                        return "a process has files open in this repository"
-                except FileNotFoundError:
-                    pass
-        except (FileNotFoundError, ProcessLookupError):
-            continue
-        except PermissionError:
-            inaccessible = True
-    if inaccessible:
-        return "cannot inspect a development-account process safely"
-    return None
-
-
-def busy_reason(path, home):
+def busy_reason(path, home, channel=None):
     """Conservative local activity checks, repeated immediately before each move."""
-    reason = process_activity(path)
+    reason = activity.scan(path, os.getuid()) if channel is None else activity.query(channel, path)
     if reason:
         return reason
     herdr = home / ".local/bin/herdr"
@@ -419,6 +399,7 @@ def main():
     parser.add_argument("--topic", default="work")
     parser.add_argument("--projects", type=Path, required=True)
     parser.add_argument("--herdr-session", default="default")
+    parser.add_argument("--activity-fd", type=int)
     args = parser.parse_args()
     token = os.environ.pop("GITHUB_TOKEN", "")
     if not token:
@@ -428,8 +409,14 @@ def main():
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", args.owner):
         raise SyncError("Invalid GitHub owner.")
     home = Path.home()
-    return Reconciler(home, args.projects, args.owner, args.topic, GitHub(token),
-                      herdr=Herdr(home, args.herdr_session)).run()
+    reconciler = Reconciler(home, args.projects, args.owner, args.topic, GitHub(token),
+                            herdr=Herdr(home, args.herdr_session))
+    if args.activity_fd is None:
+        return reconciler.run()
+    with socket.socket(fileno=args.activity_fd) as channel:
+        channel.set_inheritable(False)
+        reconciler.activity = partial(busy_reason, channel=channel)
+        return reconciler.run()
 
 
 if __name__ == "__main__":

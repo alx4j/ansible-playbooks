@@ -1,10 +1,14 @@
 """Verify repository synchronization against real Herdr in a disposable account."""
 
+import argparse
+from functools import partial
 import json
 import os
 from pathlib import Path
 import pwd
+import socket
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -12,7 +16,7 @@ import uuid
 from test_work_repositories import FakeGitHub, LocalGit, SYNC, repository
 
 
-def main():
+def main(projects, channel):
     assert pwd.getpwuid(os.getuid()).pw_name == "ansibletest", "Run only as the disposable test account"
     home = Path.home()
     session = "ansible-projects-" + uuid.uuid4().hex[:8]
@@ -33,9 +37,10 @@ def main():
                                for w in snapshot["workspaces"]],
                 "tabs": [(t["tab_id"], t["label"]) for t in snapshot["tabs"]]}
 
-    with tempfile.TemporaryDirectory(prefix="herdr-projects-", dir=home) as directory, \
-            tempfile.TemporaryDirectory(prefix="herdr-upstream-", dir=home) as upstream:
-        projects = Path(directory)
+    assert SYNC.activity.query(channel, home) == SYNC.activity.UNKNOWN
+    assert SYNC.activity.query(channel, projects / "../elsewhere") == SYNC.activity.UNKNOWN
+    activity = partial(SYNC.busy_reason, channel=channel)
+    with tempfile.TemporaryDirectory(prefix="herdr-upstream-", dir=home) as upstream:
         subprocess.run(["git", "init", "-q", "-b", "main", upstream], check=True)
         (Path(upstream) / "tracked").write_text("fixture\n")
         git = LocalGit(home, Path(upstream))
@@ -46,7 +51,7 @@ def main():
 
         def sync(with_herdr=True):
             return SYNC.Reconciler(home, projects, "fixture", "work", api, git,
-                                   herdr=herdr if with_herdr else None).run()
+                                   activity=activity, herdr=herdr if with_herdr else None).run()
 
         try:
             # Backfill a checkout created before workspace synchronization was enabled.
@@ -102,10 +107,31 @@ def main():
             assert "fixture/one" not in busy["herdr"]["kept"]
             command("workspace", "close", workspace)
             deadline = time.monotonic() + 10
-            while SYNC.busy_reason(projects / "one", home):
-                assert time.monotonic() < deadline, "Closed fixture workspace remained active"
+            while reason := activity(projects / "one", home):
+                assert time.monotonic() < deadline, f"Closed fixture workspace remained active: {reason}"
                 time.sleep(0.1)
-            archived = sync()
+            # A non-dumpable process can hold a checkout even after Herdr closes it.
+            holder_code = """import ctypes, sys
+assert ctypes.CDLL(None).prctl(4, 0, 0, 0, 0) == 0  # PR_SET_DUMPABLE
+with open(sys.argv[1]) as tracked:
+    print('holding', flush=True)
+    sys.stdin.readline()
+print('released', flush=True)
+sys.stdin.readline()
+"""
+            with subprocess.Popen([sys.executable, "-c", holder_code, str(projects / "one/tracked")],
+                                  cwd=home, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as holder:
+                try:
+                    assert holder.stdout.readline().strip() == "holding"
+                    assert SYNC.activity.scan(projects / "one", os.getuid()) == SYNC.activity.UNKNOWN
+                    held = sync()
+                    assert held["skipped"] == [{"repository": "fixture/one", "reason": SYNC.activity.FILES_OPEN}], held
+                    holder.stdin.write("release\n")
+                    holder.stdin.flush()
+                    assert holder.stdout.readline().strip() == "released"
+                    archived = sync()
+                finally:
+                    holder.stdin.close()
             assert archived["archived"] == ["fixture/one"], archived
             assert not (projects / "one").exists()
             assert not sync()["changed"]
@@ -130,4 +156,17 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if os.getuid() == 0:
+        account = pwd.getpwnam("ansibletest")
+        with tempfile.TemporaryDirectory(prefix="herdr-projects-", dir=account.pw_dir) as directory:
+            os.chown(directory, account.pw_uid, account.pw_gid)
+            subprocess.run([sys.executable, "-I", SYNC.activity.__file__, account.pw_name, directory,
+                            sys.executable, str(Path(__file__).resolve())], check=True)
+    else:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--projects", type=Path, required=True)
+        parser.add_argument("--activity-fd", type=int, required=True)
+        args = parser.parse_args()
+        with socket.socket(fileno=args.activity_fd) as channel:
+            channel.set_inheritable(False)
+            main(args.projects, channel)
