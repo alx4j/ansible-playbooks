@@ -51,6 +51,10 @@ The inventory exposes `sudo_user` for the account name. Role inputs use the `dev
 | `dev_host_java_version` | Exact SDKMAN Zulu identifier; defaults to `25.0.5.0+8-zulu`. |
 | `dev_host_jenv_java_alias` | jenv alias and account default; defaults to `zulu-25`. |
 | `dev_host_jenv_revision` | Pinned jenv commit; currently the 0.6.0 release. |
+| `dev_host_go_version`, `dev_host_go_checksums` | Exact Go release and official Linux archive SHA-256 values for AMD64 and ARM64. Change these together. |
+| `dev_host_rust_version` | Exact default Rust toolchain, including `rustc` and Cargo. |
+| `dev_host_rustup_version`, `dev_host_rustup_checksums` | Exact rustup installer release and architecture-specific SHA-256 values. Change these together. |
+| `dev_host_projects_dir` | Projects folder name under the user's home; reads controller `PROJECTS_DIR`, defaulting to `projects`. |
 | `dev_host_gradle_version`, `dev_host_codex_version`, `dev_host_moshi_version` | Override the pinned tool versions. |
 | `dev_host_codex_config_source` | Seed `.codex/config.toml` only if absent. The application and hook installer subsequently own it. |
 | `dev_host_codex_instructions_source` | Manage `.codex/AGENTS.md` from a supplied controller-side file. |
@@ -64,7 +68,8 @@ The `site` play verifies development-user login and sudo before making SSH restr
 - A combined APT package set, including Podman, Mosh, UFW, Git, tmux, and `acl` for switching to the unprivileged tool owner. Package presence is managed, not exact APT revisions.
 - The development account and approved keys, and an empty `/etc/motd` to suppress the static login message.
 - Daily unattended updates and APT timers, preserving the distribution's allowed-origin policy. Routine runs do not upgrade all packages or purge dependencies.
-- Zulu Java and Gradle installed under the development account through SDKMAN, with jenv selecting Java. One shared shell environment is loaded from `.profile` and `.bashrc`.
+- Zulu Java and Gradle through SDKMAN, Go from verified official archives, and Rust/Cargo through rustup, all under the development account. jenv selects Java. One shared shell environment is loaded from `.profile` and `.bashrc`.
+- A private projects directory under the user's home. Existing contents are preserved; changing the configured name creates the new directory and leaves the old one in place.
 - Codex, Moshi, and Codex hooks, with actual installed-version checks. User lingering and `moshi-hook.service` keep the hook daemon running. An unpaired daemon does not establish a working phone connection.
 - The Mosh UDP rule for `60000:61000`. UFW activation and its default policy remain unchanged unless firewall activation is explicitly enabled.
 - `PermitRootLogin no`, `PasswordAuthentication no`, and `KbdInteractiveAuthentication no`. The SSH validator expands the main configuration's Includes and checks syntax and effective global values before replacing the drop-in. Handlers validate and reload; a fresh connection then verifies login and sudo. Review Match-specific policies for relevant client contexts.
@@ -90,11 +95,40 @@ To upgrade within Java 25, change `dev_host_java_version` to an identifier avail
 
 Ansible tool commands use an explicit `dev_host_java_home` derived from the pinned SDKMAN version. Services and scheduled jobs must also receive an explicit Java environment; interactive shell initialization does not configure them.
 
+## Go, Rust, and command lookup
+
+New Bash login and interactive shells can run `java`, `javac`, `gradle`, `go`, `rustc`, and `cargo` directly. The shared environment also adds `~/go/bin` and `~/.cargo/bin` for tools installed with `go install` and `cargo install`.
+
+Go is extracted into `~/.local/share/go/<version>/go`; a `current` symlink selects the managed release. The shell sets `GOTOOLCHAIN=local` so Go uses that release and reports when a project requires a newer compiler. Upgrade the pinned version and both archive checksums together. Old version directories are retained.
+
+Rustup installs a pinned minimal toolchain containing the compiler, standard library, and Cargo. `build-essential` supplies the native linker used by Cargo and Go's cgo support. Ansible manages the default toolchain and disables rustup's automatic self-update; existing toolchains, project `rust-toolchain.toml` files, and rustup overrides are preserved.
+
+Existing sessions can load changes immediately, and noninteractive Bash scripts can initialize the same environment explicitly:
+
+```bash
+source "$HOME/.config/dev-environment/environment.sh"
+go version
+rustc --version
+cargo --version
+```
+
+Services, scheduled jobs, and bare SSH commands need an explicit environment or a shell that loads this file. Shell startup configuration does not change system-wide PATH or already-running processes.
+
+## Projects directory
+
+Set the optional **`PROJECTS_DIR` variable in GitHub's `development` environment** to a folder name such as `code`. Local Ansible runs read the same controller environment variable. Unset or empty values use `projects`; a host inventory can override `dev_host_projects_dir`.
+
+The name must start with a letter, digit, underscore, or hyphen and contain only letters, digits, underscores, hyphens, and dots. Paths, hidden names, and existing symlinks are rejected. Ansible creates the directory inside the managed user's home with mode `0700` and preserves its contents on reruns. In that user's shell, `PROJECTS_DIR` contains the full path:
+
+```bash
+cd "$PROJECTS_DIR"
+```
+
 ## Versions and updates
 
 Tool versions and installer checksums live in [role defaults](../roles/dev_host/defaults/main.yml). Codex and SDKMAN installer downloads use reviewed SHA-256 pins; a changed upstream script fails verification until its new content and checksum are reviewed. An existing SDKMAN installation is preserved rather than forcibly downgraded.
 
-Java and Gradle use SDKMAN checksum validation, jenv is pinned to a release commit, Codex's installer verifies release assets, and Moshi requires a release checksum manifest. Broken installations fail visibly. Review CLI compatibility when changing versions, particularly Moshi's JSON hook diagnostics.
+Java and Gradle use SDKMAN checksum validation, jenv is pinned to a release commit, Go archives and the rustup installer use reviewed SHA-256 pins, and rustup verifies its toolchain downloads. Codex's installer verifies release assets, and Moshi requires a release checksum manifest. Broken installations fail visibly. Review CLI compatibility when changing versions, particularly Moshi's JSON hook diagnostics.
 
 APT packages and application self-updaters are not frozen by these pins. The next Ansible run reconciles the selected tool versions. If strict version ownership is needed, configure application updaters through their supported settings.
 
@@ -112,3 +146,5 @@ Register the ClickUp MCP server in Codex configuration before login. OAuth crede
 Complete Moshi pairing in your terminal through its supported app/CLI flow. The playbook does not place pairing tokens in process arguments or repeat pairing during routine runs. `moshi-hook host setup` offers a QR-based flow; review its proposed host changes separately.
 
 References: [Azul through SDKMAN](https://docs.azul.com/core/install/sdkman), [SDKMAN usage](https://sdkman.io/usage/), [jenv](https://github.com/jenv/jenv), [Moshi hooks](https://getmoshi.app/docs/hooks), [Ansible user accounts](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/user_module.html), and [user services](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/systemd_service_module.html).
+
+Toolchain references: [Go downloads](https://go.dev/dl/), [Go toolchain selection](https://go.dev/doc/toolchain), and [rustup installation](https://rust-lang.github.io/rustup/installation/index.html).

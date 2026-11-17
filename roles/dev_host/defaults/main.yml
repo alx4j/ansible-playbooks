@@ -1,6 +1,7 @@
 ---
 dev_host_user: "{{ sudo_user }}"
 dev_host_home: "/home/{{ dev_host_user }}"
+dev_host_projects_dir: "{{ lookup('ansible.builtin.env', 'PROJECTS_DIR') | default('projects', true) }}"
 dev_host_authorized_keys: []
 dev_host_password_hash: "{{ lookup('ansible.builtin.env', 'SUDO_PASSWORD_HASH') }}"
 dev_host_passwordless_sudo: false
@@ -26,6 +27,7 @@ dev_host_base_packages:
   - ufw
   - tmux
   - git
+  - build-essential
 
 dev_host_automatic_reboot: false
 dev_host_java_version: "25.0.5.0+8-zulu"
@@ -34,6 +36,23 @@ dev_host_jenv_java_alias: zulu-25
 # jenv 0.6.0, pinned to its release commit.
 dev_host_jenv_revision: a3db63d1e2f138acd3882858cd34fa9b0b88cd2c
 dev_host_gradle_version: "9.8.2"
+dev_host_go_version: "1.27.4"
+dev_host_go_architectures:
+  x86_64: amd64
+  aarch64: arm64
+# SHA-256 values published at https://go.dev/dl/?mode=json for this release.
+dev_host_go_checksums:
+  amd64: 7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840
+  arm64: 3392582988a273a87ab5043ee1b2c9c17a2c3c00580bf9326c47a2e0aaaeac92
+dev_host_rust_version: "1.100.0"
+dev_host_rustup_version: "1.29.3"
+dev_host_rustup_architectures:
+  x86_64: x86_64-unknown-linux-gnu
+  aarch64: aarch64-unknown-linux-gnu
+# SHA-256 values from the versioned static.rust-lang.org rustup release.
+dev_host_rustup_checksums:
+  x86_64: sha256:b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
+  aarch64: sha256:9f608c142e0e38a78957d0661ba1dfaf0b6fb37184cfaa4b9a0aa57af6184282
 dev_host_codex_version: "0.169.0"
 dev_host_moshi_version: "0.4.57"
 # Fail closed if a mutable upstream installer changes before review.

@@ -1,4 +1,7 @@
 ---
+- name: Create the projects directory
+  ansible.builtin.import_tasks: projects.yml
+
 - name: Create user tool and configuration directories
   ansible.builtin.file:
     path: "{{ dev_host_home }}/{{ dev_host_directory }}"
@@ -24,6 +27,12 @@
 
 - name: Install and select Gradle
   ansible.builtin.import_tasks: gradle.yml
+
+- name: Install and select Go
+  ansible.builtin.import_tasks: go.yml
+
+- name: Install and select Rust and Cargo
+  ansible.builtin.import_tasks: rust.yml
 
 - name: Install Codex
   ansible.builtin.import_tasks: codex.yml

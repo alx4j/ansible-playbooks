@@ -1,10 +1,18 @@
 # Managed by Ansible. SDKMAN installs SDKs; jenv selects Java.
 export SDKMAN_DIR={{ (dev_host_home ~ '/.sdkman') | quote }}
 export JENV_ROOT={{ (dev_host_home ~ '/.jenv') | quote }}
-case ":$PATH:" in
-  *":$HOME/.local/bin:"*) ;;
-  *) export PATH="$HOME/.local/bin:$PATH" ;;
-esac
+export GOPATH={{ (dev_host_home ~ '/go') | quote }}
+export GOTOOLCHAIN=local
+export CARGO_HOME={{ (dev_host_home ~ '/.cargo') | quote }}
+export RUSTUP_HOME={{ (dev_host_home ~ '/.rustup') | quote }}
+export PROJECTS_DIR={{ (dev_host_home ~ '/' ~ dev_host_projects_dir) | quote }}
+for dev_host_bin in "$HOME/.local/bin" "$GOPATH/bin" "$HOME/.local/share/go/current/bin" "$CARGO_HOME/bin" "$SDKMAN_DIR/candidates/gradle/current/bin"; do
+  case ":$PATH:" in
+    *":$dev_host_bin:"*) ;;
+    *) export PATH="$dev_host_bin:$PATH" ;;
+  esac
+done
+unset dev_host_bin
 if [ -n "${BASH_VERSION:-}" ] && [ -z "${dev_host_sdkman_loaded:-}" ] && [ -r "$SDKMAN_DIR/bin/sdkman-init.sh" ]; then
   . "$SDKMAN_DIR/bin/sdkman-init.sh"
   dev_host_sdkman_loaded=1
