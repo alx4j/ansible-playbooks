@@ -1,0 +1,21 @@
+---
+- name: Install the checksum-verified Herdr release
+  ansible.builtin.get_url:
+    url: "https://github.com/herdrdev/herdr/releases/download/v{{ dev_host_herdr_version }}/herdr-linux-{{ ansible_facts['architecture'] }}"
+    dest: "{{ dev_host_home }}/.local/bin/herdr"
+    checksum: "{{ dev_host_herdr_checksums[ansible_facts['architecture']] }}"
+    mode: "0755"
+
+- name: Verify the installed Herdr version
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_host_home }}/.local/bin/herdr"
+      - --version
+  register: dev_host_herdr_result
+  changed_when: false
+
+- name: Require the requested Herdr version
+  when: not ansible_check_mode
+  ansible.builtin.assert:
+    that:
+      - dev_host_herdr_result.stdout == 'herdr ' ~ dev_host_herdr_version

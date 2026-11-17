@@ -25,6 +25,7 @@ References: [Dependabot options](https://docs.github.com/en/code-security/refere
 | Java | The exact `dev_host_java_version` SDKMAN identifier; change the jenv alias when changing Java majors. |
 | jenv | `dev_host_jenv_revision`, using a reviewed release commit. |
 | Gradle, Codex, Moshi | Their `dev_host_*_version` values; check CLI compatibility and installer checksums where applicable. |
+| Herdr | `dev_host_herdr_version` and both Linux SHA-256 values in `dev_host_herdr_checksums`, from the [official release manifest](https://herdr.dev/latest.json). |
 | SDKMAN/Codex installer | Review the downloaded script before updating its SHA-256 pin. |
 
 Use [Go's download metadata](https://go.dev/dl/?mode=json), [Rust's stable manifest](https://static.rust-lang.org/dist/channel-rust-stable.toml), [rustup releases](https://github.com/rust-lang/rustup/releases), and `sdk list java` for the relevant upstream versions. An installer checksum is evidence of a reviewed artifact; do not simply replace a failed checksum with whatever the download returned.

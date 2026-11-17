@@ -59,6 +59,23 @@ ansible-playbook -i "$vm_dir/inventory.json" site.yml
 sudo env "PATH=$PATH" python3 tests/doppler-runtime.py
 run_tool_test tests/java-shell.py --prepare
 run_tool_test tests/toolchain-shell.py --prepare
+run_tool_test tests/herdr.py --prepare
+# Moshi's picker probes a noninteractive shell over SSH, without sourcing profiles.
+ssh -i "$vm_dir/id" -p 2222 -o BatchMode=yes -o IdentitiesOnly=yes \
+  -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$vm_dir/known_hosts" \
+  ansibletest@127.0.0.1 'command -v herdr && herdr --version && moshi-hook mux ls --json' \
+  > "$vm_dir/herdr-ssh.log"
+python3 - "$vm_dir/herdr-ssh.log" <<'PY'
+import json
+from pathlib import Path
+import sys
+lines = Path(sys.argv[1]).read_text().splitlines()
+assert lines[0] == "/home/ansibletest/.local/bin/herdr", lines
+assert lines[1].startswith("herdr "), lines
+discovery = json.loads(lines[2])["herdr"]
+assert discovery["installed"] and any(item["name"] == "ansible-moshi-test" and item["running"]
+                                      for item in discovery["sessions"]), discovery
+PY
 sudo env "PATH=$PATH" python3 tests/vm-state.py | tee "$vm_dir/state-before.json" > /dev/null
 ansible-playbook -i "$vm_dir/inventory.json" site.yml > "$vm_dir/second-run.log"
 cat "$vm_dir/second-run.log"
@@ -71,6 +88,8 @@ assert re.search(r"vm\s+:.*changed=0\s+unreachable=0\s+failed=0", output), "Full
 PY
 run_tool_test tests/java-shell.py
 run_tool_test tests/toolchain-shell.py
+run_tool_test tests/herdr.py
+run_tool_test tests/herdr.py --cleanup
 sudo env "PATH=$PATH" python3 tests/vm-state.py | tee "$vm_dir/state-after.json" > /dev/null
 if ! diff -u "$vm_dir/state-before.json" "$vm_dir/state-after.json"; then
   sudo journalctl -u doppler-secrets.service -u apt-daily.service -u apt-daily-upgrade.service --lines=60 --no-pager

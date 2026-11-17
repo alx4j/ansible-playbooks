@@ -60,6 +60,8 @@ def main():
         "go": home / ".local/share/go/current/bin/go",
         "rustc": home / ".cargo/bin/rustc",
         "cargo": home / ".cargo/bin/cargo",
+        "herdr": home / ".local/bin/herdr",
+        "moshi-hook": home / ".local/bin/moshi-hook",
     }
     selected = "\n".join(f'test "$(command -v {name})" = {shlex.quote(str(path))}' for name, path in commands.items())
     selected += f'\ntest "$PROJECTS_DIR" = {shlex.quote(str(projects))}\ntest "$GOTOOLCHAIN" = local\n'
@@ -71,11 +73,13 @@ def main():
 go version
 rustc --version
 cargo --version
+herdr --version
 python3 -c 'import json, os; print(json.dumps(os.environ["PATH"].split(":")))'
 ''', *options)
         assert "go version go" + defaults["dev_host_go_version"] + " " in output, output
         assert "rustc " + defaults["dev_host_rust_version"] + " " in output, output
         assert "cargo " + defaults["dev_host_rust_version"] + " " in output, output
+        assert "herdr " + defaults["dev_host_herdr_version"] in output, output
         path = json.loads(output.splitlines()[-1])
         for directory in {str(binary.parent) for binary in commands.values()} | {str(home / "go/bin")}:
             assert path.count(directory) == 1, path

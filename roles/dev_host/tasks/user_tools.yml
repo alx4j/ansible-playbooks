@@ -37,8 +37,25 @@
 - name: Install Codex
   ansible.builtin.import_tasks: codex.yml
 
+- name: Install Herdr
+  ansible.builtin.import_tasks: herdr.yml
+
 - name: Install Moshi
   ansible.builtin.import_tasks: moshi.yml
+
+- name: Expose user commands to noninteractive SSH sessions
+  ansible.builtin.blockinfile:
+    path: "{{ dev_host_home }}/.bashrc"
+    create: true
+    mode: "0644"
+    insertbefore: BOF
+    marker: "# {mark} ANSIBLE SSH COMMAND PATH"
+    block: |
+      # Moshi detects Herdr before Bash's interactive-shell guard.
+      case ":$PATH:" in
+        *":$HOME/.local/bin:"*) ;;
+        *) export PATH="$HOME/.local/bin:$PATH" ;;
+      esac
 
 - name: Manage the shared development shell environment
   become: true
