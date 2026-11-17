@@ -4,13 +4,16 @@ import json
 import os
 import pwd
 import subprocess
+import sys
 
 assert os.geteuid() == 0, "Run the VM state checks with sudo"
 account = pwd.getpwnam("ansibletest")
 
 
 def command(*args):
-    return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+    result = subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    assert result.returncode == 0, f"{args} exited {result.returncode}:\n{result.stdout}"
+    return result.stdout.strip()
 
 
 assert command("loginctl", "show-user", "ansibletest", "--property=Linger", "--value") == "yes"
@@ -23,7 +26,13 @@ policy = command("/usr/sbin/sshd", "-T")
 for option in ("permitrootlogin no", "passwordauthentication no", "kbdinteractiveauthentication no"):
     assert option in policy.splitlines(), option
 user_systemctl = ("runuser", "-u", "ansibletest", "--", "env", f"XDG_RUNTIME_DIR=/run/user/{account.pw_uid}", "systemctl", "--user")
-assert command(*user_systemctl, "is-active", "moshi-hook.service") == "active"
+try:
+    assert command(*user_systemctl, "is-active", "moshi-hook.service") == "active"
+except AssertionError:
+    # This unpaired fixture account has no deployment or application credentials.
+    subprocess.run(("journalctl", f"_UID={account.pw_uid}", "--user-unit=moshi-hook.service",
+                    "--lines=40", "--no-pager"), stdout=sys.stderr, stderr=sys.stderr, check=False)
+    raise
 assert command(*user_systemctl, "is-enabled", "moshi-hook.service") == "enabled"
 reload_timestamp = command(*user_systemctl, "show", "--property=GeneratorsStartTimestampMonotonic", "--value")
 restart_timestamp = command(*user_systemctl, "show", "moshi-hook.service", "--property=ActiveEnterTimestampMonotonic", "--value")
