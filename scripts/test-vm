@@ -18,7 +18,7 @@ vm_dir="$(mktemp -d "$RUNNER_TEMP/ansible-vm.XXXXXX")"
 trap 'rm -rf -- "$vm_dir"' EXIT
 
 sudo apt-get update -qq
-sudo apt-get install -y --no-install-recommends openssh-server sudo acl strace
+sudo apt-get install -y --no-install-recommends openssh-server sudo acl
 sudo useradd -m -s /bin/bash ansibleinitial
 printf '%s\n' 'ansibleinitial ALL=(ALL:ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/ansibleinitial-test > /dev/null
 sudo chmod 0440 /etc/sudoers.d/ansibleinitial-test

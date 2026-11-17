@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 import pwd
 import shlex
-import shutil
 import socket
 import struct
 import subprocess
@@ -23,10 +22,14 @@ snapshot = home / ".herdr-test.json"
 context_file = home / ".herdr-context-test.json"
 mode = sys.argv[1:]
 assert mode in ([], ["--prepare"], ["--cleanup"]), "Unexpected test arguments"
+# Sudo on hosted runners can preserve XDG paths owned by the runner account.
+environment = {"HOME": str(home), "USER": account.pw_name, "LOGNAME": account.pw_name,
+               "SHELL": account.pw_shell, "TERM": "xterm-256color",
+               "PATH": str(home / ".local/bin") + ":/usr/local/bin:/usr/bin:/bin"}
 
 
 def command(*args):
-    return subprocess.check_output(args, text=True, timeout=20)
+    return subprocess.check_output(args, cwd=home, env=environment, text=True, timeout=20)
 
 
 def sessions():
@@ -41,20 +44,12 @@ if mode == ["--cleanup"]:
 if mode == ["--prepare"]:
     assert not any(item["name"] == session for item in sessions()), "Fixture session already exists"
     context_file.unlink(missing_ok=True)
-    launch = [herdr, "--session", session, "server"]
-    trace = home / ".herdr-startup-trace.log"
-    if shutil.which("strace"):
-        launch = ["strace", "-f", "-e", "trace=file", "-o", str(trace), *launch]
     with (home / ".herdr-test.log").open("w") as log:
-        process = subprocess.Popen(launch, cwd=home,
+        process = subprocess.Popen([herdr, "--session", session, "server"], cwd=home,
                                    stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                                   env=dict(os.environ, HOME=str(home), SHELL=account.pw_shell,
-                                            PATH=str(home / ".local/bin") + ":/usr/local/bin:/usr/bin:/bin"),
-                                   start_new_session=True)
+                                   env=environment, start_new_session=True)
     for _ in range(40):
         if process.poll() is not None:
-            if trace.exists():
-                print("\n".join(line for line in trace.read_text().splitlines() if "EACCES" in line or "EPERM" in line))
             raise AssertionError(f"Herdr exited ({process.returncode}):\n{(home / '.herdr-test.log').read_text()}")
         if any(item["name"] == session and item["running"] for item in sessions()):
             break
