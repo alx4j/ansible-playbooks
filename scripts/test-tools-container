@@ -15,7 +15,7 @@ image="localhost/ansible-playbooks-test:local"
     groupadd ansibletest
     useradd -m -g ansibletest -s /bin/bash ansibletest
     runuser -u ansibletest -- python3 tests/projects.py -v
-    runuser -u ansibletest -- python3 tests/go-partial.py
+    runuser -u ansibletest -- python3 tests/prepare-tools.py
     ansible-playbook -i localhost, tests/tools.yml
     runuser -u ansibletest -- python3 tests/java-shell.py --prepare
     runuser -u ansibletest -- python3 tests/toolchain-shell.py --prepare

@@ -51,6 +51,16 @@
     mode: "0644"
     validate: /bin/bash -n %s
 
+- name: Inspect optional Bash login files
+  ansible.builtin.stat:
+    path: "{{ dev_host_home }}/{{ dev_host_shell_file }}"
+  loop:
+    - .bash_profile
+    - .bash_login
+  loop_control:
+    loop_var: dev_host_shell_file
+  register: dev_host_bash_login_files
+
 - name: Load the managed environment in login and interactive Bash shells
   ansible.builtin.blockinfile:
     path: "{{ dev_host_home }}/{{ dev_host_shell_file }}"
@@ -61,8 +71,8 @@
       if [ -r "$HOME/.config/dev-environment/environment.sh" ]; then
         . "$HOME/.config/dev-environment/environment.sh"
       fi
-  loop:
-    - .profile
-    - .bashrc
+  loop: >-
+    {{ ['.profile', '.bashrc'] + (dev_host_bash_login_files.results
+       | selectattr('stat.exists') | map(attribute='dev_host_shell_file') | list) }}
   loop_control:
     loop_var: dev_host_shell_file

@@ -86,7 +86,7 @@ The `site` play verifies development-user login and sudo before making SSH restr
 - A combined APT package set, including Podman, Mosh, UFW, Git, tmux, and `acl` for switching to the unprivileged tool owner. Package presence is managed, not exact APT revisions.
 - The development account and approved keys, and an empty `/etc/motd` to suppress the static login message.
 - Daily unattended updates and APT timers, preserving the distribution's allowed-origin policy. Routine runs do not upgrade all packages or purge dependencies.
-- Zulu Java and Gradle through SDKMAN, Go from verified official archives, and Rust/Cargo through rustup, all under the development account. jenv selects Java. One shared shell environment is loaded from `.profile` and `.bashrc`.
+- Zulu Java and Gradle through SDKMAN, Go from verified official archives, and Rust/Cargo through rustup, all under the development account. jenv selects Java. One shared shell environment is loaded from `.profile`, `.bashrc`, and any existing `.bash_profile` or `.bash_login`. Existing login customization is preserved.
 - A private projects directory under the user's home. Existing contents are preserved; changing the configured name creates the new directory and leaves the old one in place.
 - Codex, Moshi, and Codex hooks, with actual installed-version checks. User lingering and `moshi-hook.service` keep the hook daemon running. An unpaired daemon does not establish a working phone connection.
 - The Mosh UDP rule for `60000:61000`. UFW activation and its default policy remain unchanged unless firewall activation is explicitly enabled.

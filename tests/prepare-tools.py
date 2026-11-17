@@ -1,4 +1,4 @@
-"""Seed an interrupted Go install in a fresh disposable test account."""
+"""Seed an interrupted Go install and existing Bash login customization."""
 
 import os
 from pathlib import Path
@@ -8,6 +8,9 @@ import yaml
 
 account = pwd.getpwuid(os.getuid())
 assert account.pw_name == "ansibletest", "Run only as the disposable test account"
+login_profile = Path(account.pw_dir) / ".bash_profile"
+with login_profile.open("a") as profile:
+    profile.write("\nexport ANSIBLE_TEST_LOGIN_MARKER=preserved\n")
 defaults = yaml.safe_load((Path(__file__).resolve().parents[1] / "roles/dev_host/defaults/main.yml").read_text())
 version = defaults["dev_host_go_version"]
 architecture = defaults["dev_host_go_architectures"][os.uname().machine]
@@ -25,4 +28,4 @@ binary.chmod(0o755)
 staging = root / (version + ".staging")
 staging.mkdir()
 (staging / "interrupted").write_text("An interrupted extraction must be retried\n")
-print("Seeded incomplete Go SDK with a working version command")
+print("Seeded incomplete Go SDK and existing Bash login customization")
