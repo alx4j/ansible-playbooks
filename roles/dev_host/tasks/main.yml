@@ -26,15 +26,13 @@
 - name: Configure automatic updates
   ansible.builtin.import_tasks: automatic_updates.yml
 
-- name: Configure Java
-  ansible.builtin.import_tasks: java.yml
-
 - name: Configure development tools in the user's home
   become: true
   become_user: "{{ dev_host_user }}"
   environment:
     HOME: "{{ dev_host_home }}"
     SDKMAN_DIR: "{{ dev_host_home }}/.sdkman"
+    JENV_ROOT: "{{ dev_host_home }}/.jenv"
     JAVA_HOME: "{{ dev_host_java_home }}"
     PATH: "{{ dev_host_home }}/.local/bin:{{ dev_host_java_home }}/bin:/usr/local/bin:/usr/bin:/bin"
   ansible.builtin.import_tasks: user_tools.yml

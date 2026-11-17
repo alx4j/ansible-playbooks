@@ -1,0 +1,29 @@
+---
+- name: Install the selected Gradle version through SDKMAN
+  ansible.builtin.shell:
+    cmd: |
+      set -eo pipefail
+      source "$SDKMAN_DIR/bin/sdkman-init.sh"
+      sdk install gradle {{ dev_host_gradle_version | quote }}
+    executable: /bin/bash
+    creates: "{{ dev_host_home }}/.sdkman/candidates/gradle/{{ dev_host_gradle_version }}/bin/gradle"
+
+- name: Select the default Gradle installation
+  ansible.builtin.file:
+    src: "{{ dev_host_home }}/.sdkman/candidates/gradle/{{ dev_host_gradle_version }}"
+    dest: "{{ dev_host_home }}/.sdkman/candidates/gradle/current"
+    state: link
+
+- name: Verify the selected Gradle installation
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_host_home }}/.sdkman/candidates/gradle/current/bin/gradle"
+      - --version
+  register: dev_host_gradle_result
+  changed_when: false
+
+- name: Require the requested Gradle version
+  when: not ansible_check_mode
+  ansible.builtin.assert:
+    that:
+      - "('Gradle ' ~ dev_host_gradle_version) in dev_host_gradle_result.stdout"

@@ -1,10 +1,6 @@
-# Managed by Ansible. Keep Java and user binaries available without duplicates.
-export JAVA_HOME={{ dev_host_java_home | quote }}
+# Managed by Ansible. SDKMAN installs SDKs; jenv selects Java.
 export SDKMAN_DIR={{ (dev_host_home ~ '/.sdkman') | quote }}
-case ":$PATH:" in
-  *":$JAVA_HOME/bin:"*) ;;
-  *) export PATH="$JAVA_HOME/bin:$PATH" ;;
-esac
+export JENV_ROOT={{ (dev_host_home ~ '/.jenv') | quote }}
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
   *) export PATH="$HOME/.local/bin:$PATH" ;;
@@ -12,4 +8,13 @@ esac
 if [ -n "${BASH_VERSION:-}" ] && [ -z "${dev_host_sdkman_loaded:-}" ] && [ -r "$SDKMAN_DIR/bin/sdkman-init.sh" ]; then
   . "$SDKMAN_DIR/bin/sdkman-init.sh"
   dev_host_sdkman_loaded=1
+fi
+case ":$PATH:" in
+  *":$JENV_ROOT/bin:"*) ;;
+  *) export PATH="$JENV_ROOT/bin:$PATH" ;;
+esac
+# Initialize after SDKMAN so Java commands and JAVA_HOME follow jenv.
+if [ -n "${BASH_VERSION:-}" ] && [ -z "${dev_host_jenv_loaded:-}" ] && [ -x "$JENV_ROOT/bin/jenv" ]; then
+  eval "$("$JENV_ROOT/bin/jenv" init - --no-rehash bash)"
+  dev_host_jenv_loaded=1
 fi

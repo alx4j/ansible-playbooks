@@ -19,7 +19,6 @@ dev_host_base_packages:
   - dbus-user-session
   - podman-compose
   - curl
-  - gnupg
   - ca-certificates
   - zip
   - unzip
@@ -29,11 +28,11 @@ dev_host_base_packages:
   - git
 
 dev_host_automatic_reboot: false
-dev_host_java_package: zulu25-ca-jdk-headless
-dev_host_java_architectures:
-  x86_64: amd64
-  aarch64: arm64
-dev_host_java_home: "/usr/lib/jvm/zulu25-ca-{{ dev_host_java_architectures[ansible_facts['architecture']] }}"
+dev_host_java_version: "25.0.5.0+8-zulu"
+dev_host_java_home: "{{ dev_host_home }}/.sdkman/candidates/java/{{ dev_host_java_version }}"
+dev_host_jenv_java_alias: zulu-25
+# jenv 0.6.0, pinned to its release commit.
+dev_host_jenv_revision: a3db63d1e2f138acd3882858cd34fa9b0b88cd2c
 dev_host_gradle_version: "9.8.2"
 dev_host_codex_version: "0.169.0"
 dev_host_moshi_version: "0.4.57"
