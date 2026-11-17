@@ -108,7 +108,11 @@ fi
 env -u DOPPLER_TOKEN sudo systemctl restart doppler-secrets.service
 sudo env "PATH=$PATH" python3 tests/doppler-runtime.py
 export DOPPLER_TOKEN=ansible-fixture-two
-ansible-playbook -i "$vm_dir/inventory.json" tests/doppler.yml
+if ! ansible-playbook -i "$vm_dir/inventory.json" tests/doppler.yml; then
+  sudo systemctl show doppler-secrets.service -p Result -p NRestarts -p StartLimitBurst
+  sudo journalctl -u doppler-secrets.service --lines=60 --no-pager
+  exit 1
+fi
 sudo env "PATH=$PATH" python3 tests/doppler-runtime.py --rotated
 unset DOPPLER_TOKEN
 

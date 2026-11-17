@@ -88,6 +88,11 @@ the ciphertext; the service restarts to load it. An unchanged token preserves
 the ciphertext and service start time. No remote Doppler token is automatically
 created or revoked.
 
+When code, unit definitions, or the token change, Ansible resets the service's
+start-limit counter before restarting it. Planned rotation remains possible
+after recent maintenance; the normal crash limit stays in place. Unchanged
+runs leave the counter and service untouched.
+
 The deployment verifies local service readiness, not Doppler authentication.
 Run the wrapper's `check --require NAME` for an intended application secret to
 verify a replacement token before revoking the old one. A failed fetch stops the
