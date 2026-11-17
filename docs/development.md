@@ -80,6 +80,16 @@ and after convergence. The VM also checks Herdr and
 Moshi discovery through a real noninteractive SSH connection. These checks do
 not pair a phone or send notifications.
 
+Repository-sync unit tests use real local Git repositories and synthetic GitHub
+responses to cover pagination failures, access loss, identity changes, ownership,
+archives, restores, interrupted operations, and active-work safeguards. The SSH
+container job applies the production setup tasks twice, then exercises real SSH
+cloning and pushing, rejects a mismatched host key, and checks archive/restore
+convergence. GitHub API responses are fixtures; CI never registers real account
+keys or accesses private repositories. The full-host VM disables that external
+integration because its Doppler token is synthetic; the dedicated repository
+tests are required through the existing checks and SSH jobs.
+
 The disposable VM setup clears the hosted runner's global `XDG_CONFIG_HOME` and
 `XDG_RUNTIME_DIR` assignments so fixture accounts and SSH logins use their own
 home and runtime directories.

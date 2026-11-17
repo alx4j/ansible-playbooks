@@ -1,0 +1,46 @@
+---
+- name: Require valid repository synchronization inputs
+  ansible.builtin.assert:
+    that:
+      - work_repositories_owner is match('^[A-Za-z0-9][A-Za-z0-9-]{0,38}$')
+      - work_repositories_topic is match('^[a-z0-9][a-z0-9-]{0,49}$')
+      - work_repositories_user != 'root'
+      - work_repositories_home == '/home/' ~ work_repositories_user
+      - work_repositories_github_secret is match('^[A-Za-z_][A-Za-z0-9_]*$')
+
+- name: Create the root-owned repository helper directory
+  ansible.builtin.file:
+    path: /usr/local/lib/work-repositories
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the repository synchronization helper
+  ansible.builtin.copy:
+    src: sync.py
+    dest: /usr/local/lib/work-repositories/sync.py
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install GitHub's verified Ed25519 host key
+  ansible.builtin.copy:
+    src: github_known_hosts
+    dest: /usr/local/lib/work-repositories/github_known_hosts
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Create private SSH and repository-state directories
+  ansible.builtin.file:
+    path: "{{ work_repositories_home }}/{{ work_repositories_subdirectory }}"
+    state: directory
+    owner: "{{ work_repositories_user }}"
+    group: "{{ work_repositories_user }}"
+    mode: "0700"
+  loop:
+    - .ssh
+    - .local/state/work-repositories
+  loop_control:
+    loop_var: work_repositories_subdirectory

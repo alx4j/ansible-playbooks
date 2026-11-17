@@ -28,6 +28,14 @@ Obtain each SSH host key through a trusted channel such as the provider console.
 
 When supplied, `DOPPLER_TOKEN` is delivered only to the routine `site` play and encrypted on the VPS. It is excluded from access probes, initial-user bootstrap, and generated inventory. See [Doppler setup and rotation](doppler.md). Omitting it leaves any existing service and credential unchanged. Standard GitHub Actions usage and billing apply.
 
+[Work repository synchronization](work-repositories.md) is enabled by default.
+It requires the local Doppler service and a `GITHUB_TOKEN` in its Doppler config
+with access to your selected repositories. Fresh-server SSH enrollment also
+needs **Git SSH keys: read/write** permission, or manual registration of the
+server's generated public key. Disable `work_repositories_enabled` in inventory
+if this host should not synchronize projects. The GitHub token stays in Doppler;
+do not add another workflow secret for it.
+
 ## 2. Establish access
 
 Open **Actions → Bootstrap VPS → Run workflow**, select `main`, and fill in:
