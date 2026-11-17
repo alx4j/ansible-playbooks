@@ -67,6 +67,28 @@
     that:
       - dev_host_moshi_result.stdout == 'moshi-hook version ' ~ dev_host_moshi_version
 
+- name: Read the Moshi automatic update policy
+  when: not ansible_check_mode
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_host_home }}/.local/bin/moshi-hook"
+      - set
+      - auto-update
+  register: dev_host_moshi_update_policy
+  changed_when: false
+
+- name: Keep Moshi updates under Ansible control
+  when:
+    - not ansible_check_mode
+    - dev_host_moshi_update_policy.stdout_lines[0] != 'auto-update: off'
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_host_home }}/.local/bin/moshi-hook"
+      - set
+      - auto-update
+      - "off"
+  changed_when: true
+
 - name: Inspect installed agent hooks without exposing account diagnostics
   when: not ansible_check_mode
   ansible.builtin.command:

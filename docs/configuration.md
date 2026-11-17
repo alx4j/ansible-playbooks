@@ -157,7 +157,10 @@ Follow the [update procedure](updates.md) when changing pins or reviewing Depend
 
 Java and Gradle use SDKMAN checksum validation, jenv is pinned to a release commit, Go archives and the rustup installer use reviewed SHA-256 pins, and rustup verifies its toolchain downloads. Codex's installer verifies release assets, and Moshi requires a release checksum manifest. Broken installations fail visibly. Review CLI compatibility when changing versions, particularly Moshi's JSON hook diagnostics.
 
-APT packages and application self-updaters are not frozen by these pins. The next Ansible run reconciles the selected tool versions. If strict version ownership is needed, configure application updaters through their supported settings.
+Ansible sets Moshi's `auto-update` policy to `off`, preserving its other settings
+and pairing. Update its version pin through the normal PR workflow. APT packages
+and other application self-updaters are not frozen by these pins; the next
+Ansible run reconciles the selected tool versions.
 
 ## Account onboarding
 
