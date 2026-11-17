@@ -30,6 +30,7 @@ def main():
 
     files = {
         fixture / "keep.txt": "Keep existing projects on reruns\n",
+        fixture / "bin/codex": '#!/bin/sh\nprintf "%s\\n" "$@"\n',
         go_project / "go.mod": "module example.com/ansible-go-fixture\n\ngo 1.20\n",
         go_project / "main.go": 'package main\nimport "fmt"\nfunc main() { fmt.Println("go-build-ok") }\n',
         rust_project / "Cargo.toml": '[package]\nname = "ansible-rust-fixture"\nversion = "0.1.0"\nedition = "2021"\n',
@@ -42,6 +43,8 @@ def main():
             path.write_text(content)
         else:
             assert path.read_text() == content, f"Existing project changed: {path}"
+    if prepare:
+        (fixture / "bin/codex").chmod(0o755)
     settings = tomllib.loads((home / ".rustup/settings.toml").read_text())
     assert settings["auto_self_update"] == "disable", settings
 
@@ -87,6 +90,17 @@ python3 -c 'import json, os; print(json.dumps(os.environ["PATH"].split(":")))'
         for directory in {str(binary.parent) for binary in commands.values()} | {str(home / "go/bin")}:
             assert path.count(directory) == 1, path
 
+        # Exercise argument forwarding, repeated loading, and the explicit bypass.
+        arguments = shell(initialize + source * 2 + f'''
+export PATH={shlex.quote(str(fixture / "bin"))}:"$PATH"
+codex resume "session with spaces"
+command codex --version
+''', *options).splitlines()
+        expected = ["resume", "session with spaces", "--version"]
+        if "-i" in options:
+            expected.insert(0, "--no-daemon")
+        assert arguments == expected, (options, arguments)
+
     shell(f'''
 cd {shlex.quote(str(go_project))}
 go install .
@@ -94,7 +108,7 @@ test "$(ansible-go-fixture)" = go-build-ok
 cd {shlex.quote(str(rust_project))}
 test "$(cargo run --offline --quiet)" = cargo-build-ok
 ''', "--login")
-    print("Java/Gradle/Go/Rust PATH, real Go and Cargo builds, projects, and repeated shell loading passed")
+    print("Java/Gradle/Go/Rust PATH, builds, projects, repeated shell loading, and Codex alias behavior passed")
 
 
 if __name__ == "__main__":
