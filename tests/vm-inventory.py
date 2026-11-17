@@ -16,5 +16,7 @@ host = {
     "dev_host_authorized_keys": [public_key], "dev_host_passwordless_sudo": True,
     "dev_host_ssh_port": 2222, "dev_host_enable_firewall": True,
     "dev_host_codex_config_source": str(Path(__file__).resolve().parent / "fixtures/codex-config.toml"),
+    # External GitHub access is exercised with fixtures in work-repositories-ssh.py.
+    "work_repositories_enabled": False,
 }
 (directory / "inventory.json").write_text(json.dumps({"all": {"children": {"development": {"hosts": {"vm": host}}}}}))

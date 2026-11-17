@@ -78,6 +78,7 @@ jobs:
         if: github.event_name == 'workflow_run'
         env:
           PROJECTS_DIR: ${{ vars.PROJECTS_DIR }}
+          PROJECTS_TOPIC: ${{ vars.PROJECTS_TOPIC }}
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
@@ -91,6 +92,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         env:
           PROJECTS_DIR: ${{ vars.PROJECTS_DIR }}
+          PROJECTS_TOPIC: ${{ vars.PROJECTS_TOPIC }}
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
           DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}

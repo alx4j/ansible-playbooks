@@ -16,6 +16,7 @@ Save these settings once:
 | `ANSIBLE_KNOWN_HOSTS` | Variable | Independently verified OpenSSH host-key entries for every managed server. |
 | `ANSIBLE_SSH_PORT` | Optional variable | Existing SSH port; defaults to `22`. This does not change the server's listening port. |
 | `PROJECTS_DIR` | Optional variable | Projects folder name inside the development user's home, such as `code`; defaults to `projects`. |
+| `PROJECTS_TOPIC` | Optional variable | GitHub topic used to select repositories to synchronize; defaults to `work`. |
 | `DOPPLER_TOKEN` | Optional secret | Read-only Doppler Service Token; enables encrypted credential storage and the local secret service for Codex skills. |
 
 These account and key settings are shared across the inventory. GitHub maps `SUDO_USER` to the controller variable `DEPLOY_SUDO_USER`; variables are not automatically masked in logs. Missing required settings stop the run before any connection.
@@ -27,6 +28,14 @@ The [development inventory](../inventories/development/hosts.yml) contains serve
 Obtain each SSH host key through a trusted channel such as the provider console. The entry must match the connection address, including an `ansible_host` override. For a nondefault port, use `[hostname]:port` in `known_hosts`. An unverified `ssh-keyscan` result does not establish trust. The runner must be able to reach each server's SSH port.
 
 When supplied, `DOPPLER_TOKEN` is delivered only to the routine `site` play and encrypted on the VPS. It is excluded from access probes, initial-user bootstrap, and generated inventory. See [Doppler setup and rotation](doppler.md). Omitting it leaves any existing service and credential unchanged. Standard GitHub Actions usage and billing apply.
+
+[Work repository synchronization](work-repositories.md) is enabled by default.
+It requires the local Doppler service and a `GITHUB_TOKEN` in its Doppler config
+with access to your selected repositories. Fresh-server SSH enrollment also
+needs **Git SSH keys: read/write** permission, or manual registration of the
+server's generated public key. Disable `work_repositories_enabled` in inventory
+if this host should not synchronize projects. The GitHub token stays in Doppler;
+do not add another workflow secret for it.
 
 ## 2. Establish access
 

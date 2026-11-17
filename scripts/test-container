@@ -31,4 +31,5 @@ fi
     python3 -c '\''import grp; from pathlib import Path; assert "ansibletest" in grp.getgrnam("unrelated").gr_mem; assert Path("/tmp/unrelated-key.pub").read_text().strip() in Path("/home/ansibletest/.ssh/authorized_keys").read_text()'\''
     python3 tests/container-negative.py
     python3 tests/bootstrap-ssh.py
+    python3 tests/work-repositories-ssh.py
   '

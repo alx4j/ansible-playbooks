@@ -9,3 +9,5 @@
     - role: dev_host
     - role: doppler_secrets
       when: doppler_secrets_enabled | bool
+    - role: work_repositories
+      when: work_repositories_enabled | bool
