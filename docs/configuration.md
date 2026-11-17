@@ -177,6 +177,13 @@ Register the ClickUp MCP server in Codex configuration before login. OAuth crede
 
 Complete Moshi pairing in your terminal through its supported app/CLI flow. The playbook does not place pairing tokens in process arguments or repeat pairing during routine runs. `moshi-hook host setup` offers a QR-based flow; review its proposed host changes separately.
 
+Interactive Bash shells alias `codex` to `codex --no-daemon` so Moshi can associate
+each session with the correct terminal. This also applies to `codex resume`.
+Use `command codex` to bypass the alias when you want the shared server. New
+shells load the alias automatically; existing shells can run
+`source "$HOME/.config/dev-environment/environment.sh"`. Noninteractive scripts
+and commands that use the executable's full path are unaffected.
+
 References: [Azul through SDKMAN](https://docs.azul.com/core/install/sdkman), [SDKMAN usage](https://sdkman.io/usage/), [jenv](https://github.com/jenv/jenv), [Moshi hooks](https://getmoshi.app/docs/hooks), [Ansible user accounts](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/user_module.html), and [user services](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/systemd_service_module.html).
 
 Toolchain references: [Go downloads](https://go.dev/dl/), [Go toolchain selection](https://go.dev/doc/toolchain), and [rustup installation](https://rust-lang.github.io/rustup/installation/index.html).

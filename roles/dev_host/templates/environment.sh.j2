@@ -26,3 +26,7 @@ if [ -n "${BASH_VERSION:-}" ] && [ -z "${dev_host_jenv_loaded:-}" ] && [ -x "$JE
   eval "$("$JENV_ROOT/bin/jenv" init - --no-rehash bash)"
   dev_host_jenv_loaded=1
 fi
+# Keep Moshi hooks associated with the terminal that launched Codex.
+case "$-" in
+  *i*) alias codex='codex --no-daemon' ;;
+esac
