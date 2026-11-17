@@ -30,8 +30,10 @@ try:
     assert command(*user_systemctl, "is-active", "moshi-hook.service") == "active"
 except AssertionError:
     # This unpaired fixture account has no deployment or application credentials.
-    subprocess.run(("journalctl", f"_UID={account.pw_uid}", "--user-unit=moshi-hook.service",
-                    "--lines=40", "--no-pager"), stdout=sys.stderr, stderr=sys.stderr, check=False)
+    subprocess.run((*user_systemctl, "status", "moshi-hook.service", "--full", "--no-pager"),
+                   stdout=sys.stderr, stderr=sys.stderr, check=False)
+    subprocess.run(("journalctl", f"_UID={account.pw_uid}", "--lines=60", "--no-pager"),
+                   stdout=sys.stderr, stderr=sys.stderr, check=False)
     raise
 assert command(*user_systemctl, "is-enabled", "moshi-hook.service") == "enabled"
 reload_timestamp = command(*user_systemctl, "show", "--property=GeneratorsStartTimestampMonotonic", "--value")
