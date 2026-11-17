@@ -74,7 +74,9 @@ The VM test covers real systemd and firewall configuration on Ubuntu AMD64. ARM6
 
 Both tool suites start a real Herdr session, discover its workspace through
 Moshi, and check Moshi's context from inside a pane. The session's process and
-workspace must survive an unchanged Ansible run. The VM also checks Herdr and
+workspace must survive an unchanged Ansible run. They verify the pinned title
+plugin is enabled and executes through Bun when a workspace is renamed, before
+and after convergence. The VM also checks Herdr and
 Moshi discovery through a real noninteractive SSH connection. These checks do
 not pair a phone or send notifications.
 

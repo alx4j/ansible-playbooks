@@ -1,8 +1,9 @@
 # Herdr and Moshi
 
-Ansible installs Herdr TUI for the development account alongside Moshi and its
-Codex hooks. Herdr keeps terminals running across SSH disconnects; Moshi lets
-you attach to those workspaces from your phone and receive agent events.
+Ansible installs Herdr TUI, Bun, and `rjyo/herdr-window-title-sync` for the
+development account alongside Moshi and its Codex hooks. Herdr keeps terminals
+running across SSH disconnects; Moshi lets you attach to those workspaces from
+your phone and receive agent events.
 
 ## Start a workspace
 
@@ -25,8 +26,9 @@ Run `codex` in that workspace. Press **Ctrl-B, Q** to detach while its processes
 keep running. Reconnect in Moshi and select the workspace from the Herdr tab.
 An empty picker usually means no Herdr server is running yet.
 
-Ansible installs the binary without starting sessions, attaching automatically,
-or changing your Herdr configuration. A repeat run preserves running sessions.
+Ansible installs Herdr and registers the title plugin without starting sessions,
+attaching automatically, or replacing your Herdr configuration. A repeat run
+preserves running sessions.
 Replacing the binary during an upgrade does not restart an existing Herdr server;
 finish its work before stopping it with `herdr session stop default` and starting
 it again. Disconnect survival does not mean processes survive a server reboot.
@@ -63,8 +65,22 @@ is needed for Herdr's local sessions.
 `moshi <directory>` remains a tmux launcher. Use `herdr workspace create` for
 Herdr projects. tmux remains installed for existing sessions and that launcher.
 
-The guide's window-title plugin is optional and needs Bun; neither is required
-for session discovery or agent events, so this setup does not install them.
+## Window titles
+
+The [window-title plugin](https://github.com/rjyo/herdr-window-title-sync) updates
+the outer terminal title when the focused workspace, tab, or agent changes.
+Moshi uses that title for its session label. No separate plugin setup is needed.
+
+```bash
+bun --version
+herdr plugin list
+herdr plugin action invoke rjyo.window-title-sync.refresh
+```
+
+The refresh command needs a running Herdr session; for a named session, add
+`--session <name>` immediately after `herdr`.
+The plugin runs locally. Its fallback can use recent Codex or Claude prompt text
+in the title, so that text can appear in Moshi's session label.
 
 ## Versions
 
@@ -72,6 +88,17 @@ for session discovery or agent events, so this setup does not install them.
 the Linux AMD64 and ARM64 binaries. Update them together using the official
 release manifest. Avoid `herdr update` on an Ansible-managed host: the next
 playbook run restores the pinned binary.
+
+`dev_host_bun_version` and `dev_host_bun_checksums` select Bun's verified Linux
+release. Bun is exposed through `~/.local/bin/bun`, including noninteractive SSH
+sessions. The x86 build uses Bun's baseline CPU target for broader VPS support.
+
+`dev_host_herdr_title_sync_revision` pins the plugin's Git commit. Ansible checks
+it out into `~/.local/share/herdr-window-title-sync` and registers it with
+`herdr plugin link <directory> --enabled`. This supports setup before any Herdr server exists
+and leaves other plugins and settings intact. Later runs restore this plugin's
+selected revision and enabled state. Update the revision through Ansible;
+`herdr plugin update` does not manage locally linked plugins.
 
 Moshi installs the current release on a fresh host and keeps its automatic
 updater. Ansible preserves an existing Moshi installation, settings, and pairing;
