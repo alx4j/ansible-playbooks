@@ -19,3 +19,48 @@
   ansible.builtin.assert:
     that:
       - dev_host_herdr_result.stdout == 'herdr ' ~ dev_host_herdr_version
+
+- name: Install the title plugin runtime
+  ansible.builtin.import_tasks: bun.yml
+
+- name: Install and register the window title plugin
+  vars:
+    dev_host_herdr_title_sync_directory: "{{ dev_host_home }}/.local/share/herdr-window-title-sync"
+  block:
+    - name: Check out the reviewed window title plugin
+      ansible.builtin.git:
+        repo: https://github.com/rjyo/herdr-window-title-sync.git
+        dest: "{{ dev_host_herdr_title_sync_directory }}"
+        version: "{{ dev_host_herdr_title_sync_revision }}"
+      register: dev_host_herdr_title_sync_checkout
+
+    - name: Read the window title plugin registration
+      ansible.builtin.command:
+        argv:
+          - "{{ dev_host_home }}/.local/bin/herdr"
+          - plugin
+          - list
+          - --plugin
+          - rjyo.window-title-sync
+          - --json
+      register: dev_host_herdr_title_sync_result
+      changed_when: false
+
+    - name: Register and enable the managed window title plugin
+      when:
+        - not ansible_check_mode
+        - >-
+          dev_host_herdr_title_sync_checkout.changed or
+          dev_host_herdr_title_sync_current.plugin_root | default('') != dev_host_herdr_title_sync_directory or
+          not dev_host_herdr_title_sync_current.enabled | default(false)
+      vars:
+        dev_host_herdr_title_sync_current: >-
+          {{ (dev_host_herdr_title_sync_result.stdout | from_json).result.plugins | first | default({}) }}
+      ansible.builtin.command:
+        argv:
+          - "{{ dev_host_home }}/.local/bin/herdr"
+          - plugin
+          - link
+          - "{{ dev_host_herdr_title_sync_directory }}"
+          - --enabled
+      changed_when: true

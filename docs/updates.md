@@ -27,6 +27,8 @@ References: [Dependabot options](https://docs.github.com/en/code-security/refere
 | Gradle, Codex | Their `dev_host_*_version` values; check CLI compatibility and installer checksums where applicable. |
 | Moshi | No version pin. Fresh installs use the current release with checksum verification; existing installations keep their updater and settings. |
 | Herdr | `dev_host_herdr_version` and both Linux SHA-256 values in `dev_host_herdr_checksums`, from the [official release manifest](https://herdr.dev/latest.json). |
+| Herdr window titles | `dev_host_herdr_title_sync_revision`, using a reviewed commit from `rjyo/herdr-window-title-sync`. |
+| Bun | `dev_host_bun_version` and both Linux archive SHA-256 values in `dev_host_bun_checksums`, from the release's `SHASUMS256.txt`. |
 | SDKMAN/Codex installer | Review the downloaded script before updating its SHA-256 pin. |
 
 Use [Go's download metadata](https://go.dev/dl/?mode=json), [Rust's stable manifest](https://static.rust-lang.org/dist/channel-rust-stable.toml), [rustup releases](https://github.com/rust-lang/rustup/releases), and `sdk list java` for the relevant upstream versions. An installer checksum is evidence of a reviewed artifact; do not simply replace a failed checksum with whatever the download returned.

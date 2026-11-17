@@ -28,7 +28,7 @@ The setup workflow runs these stages automatically. They are also available for 
 - [Development and local runs](docs/development.md): controller setup, local commands, and verification.
 - [Dependency and tool updates](docs/updates.md): Dependabot, version pins, checksums, and the upgrade procedure.
 - [Doppler secrets](docs/doppler.md): encrypted token setup and selected secrets for normal SSH/tmux/Herdr sessions.
-- [Herdr and Moshi](docs/herdr.md): persistent workspaces, phone pairing, and session discovery.
+- [Herdr and Moshi](docs/herdr.md): persistent workspaces, phone pairing, session discovery, and automatic window titles.
 - [Setup history](ansible.md): the historical commands that informed these playbooks.
 
 ## Repository map

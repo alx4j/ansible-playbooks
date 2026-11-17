@@ -1,0 +1,44 @@
+---
+- name: Install Bun for Herdr plugins
+  vars:
+    dev_host_bun_archive: "bun-linux-{{ dev_host_bun_architectures[ansible_facts['architecture']] }}"
+    dev_host_bun_directory: "{{ dev_host_home }}/.local/share/bun/{{ dev_host_bun_version }}"
+  block:
+    - name: Download the checksum-verified Bun archive
+      ansible.builtin.get_url:
+        url: "https://github.com/oven-sh/bun/releases/download/bun-v{{ dev_host_bun_version }}/{{ dev_host_bun_archive }}.zip"
+        dest: "{{ dev_host_home }}/.cache/ansible-installers/bun-{{ dev_host_bun_version }}-{{ dev_host_bun_archive }}.zip"
+        checksum: "{{ dev_host_bun_checksums[ansible_facts['architecture']] }}"
+        mode: "0600"
+
+    - name: Create the versioned Bun directory
+      ansible.builtin.file:
+        path: "{{ dev_host_bun_directory }}"
+        state: directory
+        mode: "0700"
+
+    - name: Extract the verified Bun release
+      ansible.builtin.unarchive:
+        src: "{{ dev_host_home }}/.cache/ansible-installers/bun-{{ dev_host_bun_version }}-{{ dev_host_bun_archive }}.zip"
+        dest: "{{ dev_host_bun_directory }}"
+        remote_src: true
+
+    - name: Verify the installed Bun version
+      ansible.builtin.command:
+        argv:
+          - "{{ dev_host_bun_directory }}/{{ dev_host_bun_archive }}/bun"
+          - --version
+      register: dev_host_bun_result
+      changed_when: false
+
+    - name: Require the requested Bun version
+      when: not ansible_check_mode
+      ansible.builtin.assert:
+        that:
+          - dev_host_bun_result.stdout == dev_host_bun_version
+
+    - name: Expose Bun on the user command path
+      ansible.builtin.file:
+        src: "{{ dev_host_bun_directory }}/{{ dev_host_bun_archive }}/bun"
+        dest: "{{ dev_host_home }}/.local/bin/bun"
+        state: link
