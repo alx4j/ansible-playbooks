@@ -28,6 +28,8 @@
       - "{{ work_repositories_topic }}"
       - --projects
       - "{{ work_repositories_directory }}"
+      - --herdr-session
+      - "{{ work_repositories_herdr_session }}"
   register: work_repositories_result
   changed_when: work_repositories_result.rc == 0 and (work_repositories_result.stdout | from_json).changed
 

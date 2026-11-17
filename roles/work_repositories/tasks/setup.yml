@@ -7,6 +7,7 @@
       - work_repositories_user != 'root'
       - work_repositories_home == '/home/' ~ work_repositories_user
       - work_repositories_github_secret is match('^[A-Za-z_][A-Za-z0-9_]*$')
+      - work_repositories_herdr_session is match('^[A-Za-z0-9_-]+$')
 
 - name: Create the root-owned repository helper directory
   ansible.builtin.file:
