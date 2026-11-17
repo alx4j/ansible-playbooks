@@ -24,7 +24,8 @@ References: [Dependabot options](https://docs.github.com/en/code-security/refere
 | Rustup | `dev_host_rustup_version` and both architecture-specific installer checksums. |
 | Java | The exact `dev_host_java_version` SDKMAN identifier; change the jenv alias when changing Java majors. |
 | jenv | `dev_host_jenv_revision`, using a reviewed release commit. |
-| Gradle, Codex, Moshi | Their `dev_host_*_version` values; check CLI compatibility and installer checksums where applicable. |
+| Gradle, Codex | Their `dev_host_*_version` values; check CLI compatibility and installer checksums where applicable. |
+| Moshi | No version pin. Fresh installs use the current release with checksum verification; existing installations keep their updater and settings. |
 | Herdr | `dev_host_herdr_version` and both Linux SHA-256 values in `dev_host_herdr_checksums`, from the [official release manifest](https://herdr.dev/latest.json). |
 | SDKMAN/Codex installer | Review the downloaded script before updating its SHA-256 pin. |
 

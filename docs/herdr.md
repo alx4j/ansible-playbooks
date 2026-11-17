@@ -73,9 +73,9 @@ the Linux AMD64 and ARM64 binaries. Update them together using the official
 release manifest. Avoid `herdr update` on an Ansible-managed host: the next
 playbook run restores the pinned binary.
 
-Ansible disables Moshi's automatic updater to keep its pinned version stable.
-Change `dev_host_moshi_version` through the normal PR and deployment workflow.
-Other Moshi settings and pairing are preserved.
+Moshi installs the current release on a fresh host and keeps its automatic
+updater. Ansible preserves an existing Moshi installation, settings, and pairing;
+it does not downgrade an automatically updated binary.
 
 References: [Moshi with Herdr](https://getmoshi.app/guides/herdr),
 [Moshi's Herdr reference](https://getmoshi.app/docs/herdr),

@@ -86,7 +86,7 @@ else:
     assert json.loads(snapshot.read_text()) == state, "Herdr sessions changed during an unchanged Ansible run"
 
 discovery = json.loads(command(moshi, "mux", "ls", "--json"))["herdr"]
-assert command(moshi, "set", "auto-update").splitlines()[0] == "auto-update: off"
+assert command(moshi, "set", "auto-update").splitlines()[0] == "auto-update: auto"
 assert discovery["installed"]
 assert any(item["name"] == session and item["running"] for item in discovery["sessions"]), discovery
 assert any(item["label"] == "moshi-fixture" and item["sessionName"] == session

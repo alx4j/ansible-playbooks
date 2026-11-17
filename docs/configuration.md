@@ -73,7 +73,7 @@ The inventory exposes `sudo_user` for the account name. Role inputs use the `dev
 | `dev_host_rust_version` | Exact default Rust toolchain, including `rustc` and Cargo. |
 | `dev_host_rustup_version`, `dev_host_rustup_checksums` | Exact rustup installer release and architecture-specific SHA-256 values. Change these together. |
 | `dev_host_projects_dir` | Projects folder name under the user's home; reads controller `PROJECTS_DIR`, defaulting to `projects`. |
-| `dev_host_gradle_version`, `dev_host_codex_version`, `dev_host_moshi_version` | Override the pinned tool versions. |
+| `dev_host_gradle_version`, `dev_host_codex_version` | Override the pinned tool versions. |
 | `dev_host_herdr_version`, `dev_host_herdr_checksums` | Select Herdr and the matching Linux release checksums. |
 | `dev_host_codex_config_source` | Seed `.codex/config.toml` only if absent. The application and hook installer subsequently own it. |
 | `dev_host_codex_instructions_source` | Manage `.codex/AGENTS.md` from a supplied controller-side file. |
@@ -157,10 +157,11 @@ Follow the [update procedure](updates.md) when changing pins or reviewing Depend
 
 Java and Gradle use SDKMAN checksum validation, jenv is pinned to a release commit, Go archives and the rustup installer use reviewed SHA-256 pins, and rustup verifies its toolchain downloads. Codex's installer verifies release assets, and Moshi requires a release checksum manifest. Broken installations fail visibly. Review CLI compatibility when changing versions, particularly Moshi's JSON hook diagnostics.
 
-Ansible sets Moshi's `auto-update` policy to `off`, preserving its other settings
-and pairing. Update its version pin through the normal PR workflow. APT packages
-and other application self-updaters are not frozen by these pins; the next
-Ansible run reconciles the selected tool versions.
+Moshi is not pinned: fresh installations use the current release, verified
+against its checksum manifest. Existing installations and automatic-update
+settings are preserved, so reruns do not downgrade Moshi after it updates itself.
+APT packages and other application self-updaters are not frozen by the remaining
+pins; the next Ansible run reconciles those selected tool versions.
 
 ## Account onboarding
 
