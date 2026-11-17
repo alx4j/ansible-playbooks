@@ -63,7 +63,7 @@ export DOPPLER_TOKEN=ansible-fixture-one
 ansible-playbook -i "$vm_dir/inventory.json" site.yml
 # Persistent APT timers can catch up immediately and restart services after
 # library upgrades. Finish that initial work before measuring convergence.
-sudo systemctl start apt-daily.service apt-daily-upgrade.service
+sudo env "PATH=$PATH" python3 tests/wait-apt.py
 sudo env "PATH=$PATH" python3 tests/doppler-runtime.py
 run_tool_test tests/java-shell.py --prepare
 run_tool_test tests/toolchain-shell.py --prepare
