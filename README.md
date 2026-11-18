@@ -1,77 +1,44 @@
-# Development VPS playbooks
+# Development VPS bootstrap
 
-Configure a development VPS with a dedicated account, sudo and SSH access, automatic updates, Podman, Java through SDKMAN and jenv, Gradle, Go, Rust/Cargo, Codex, Herdr, Moshi, and Mosh. Development commands are available on the user's PATH, with a configurable projects directory in their home.
+Keep your development environment on a VPS and pick up the same terminal from your laptop or phone. Run one GitHub Actions workflow to set up the server. Open Herdr, pick a project, and start coding. Your shell, build, or Codex session can keep running when you disconnect.
 
-Repositories owned by `alx4j` with the GitHub topic selected by `PROJECTS_TOPIC`
-(default `work`) are cloned over SSH into that projects directory. Existing
-checkouts are left untouched; removing
-the topic archives inactive, automation-owned checkouts. This uses the
-Doppler-managed GitHub credential; see [work repository setup](docs/work-repositories.md).
+## What you get
 
-The [Codex toolkit](docs/agent-toolkit.md) installs the personal plugins and
-global instructions from a separate managed checkout. Ansible updates that
-checkout from toolkit `main` on each run, preserving your editable project copy.
-
-[TokenEconomizer](docs/tokeneconomizer.md) is installed separately for Codex, with
-repository-specific state and configurable cost-control features.
-
-The managed host needs Debian/Ubuntu, Python 3, OpenSSH, APT, and systemd. The configuration supports AMD64 and ARM64; tests exercise Debian 13 containers and an Ubuntu 24.04 VM on AMD64. GitHub Actions provides the controller, so you do not need Ansible installed on your workstation.
-
-## Run through GitHub Actions
-
-1. Follow [workflow setup](docs/github-deployment.md#1-configure-the-environment) to save the `SUDO_USER` variable, SSH private key, `SUDO_PASSWORD` secret, and trusted host keys in the `development` GitHub environment. List managed servers in the [development inventory](inventories/development/hosts.yml).
-2. Open **Actions → Bootstrap VPS → Run workflow**. Enter the server address and its initial username and password. One run creates the configured account when needed, verifies its key and sudo access, and configures the server. For `dev.alx4j.com`, the initial username is `debian`.
-3. Complete [account onboarding](docs/configuration.md#account-onboarding): log in to Codex, run Moshi's QR pairing from your terminal, and review TokenEconomizer's hooks.
-4. Merge later configuration changes to `main`. After validation passes, **Bootstrap VPS** updates inventory servers with working development-account access. It warns and skips servers without that access; first setup remains manual.
-
-You can also rerun a single server manually with just its address once development-account access works. Pull requests run validation without contacting inventory servers. Keep provider-console access available when changing SSH or sudo.
-
-## Local playbooks
-
-The setup workflow runs these stages automatically. They are also available for [local runs](docs/development.md#bootstrap-and-apply).
-
-| Playbook | Purpose |
+| When you want to… | What bootstrap sets up |
 | --- | --- |
-| `bootstrap.yml` | Connect as the initial administrator; create the development account, sudo access, and approved keys. Leave SSH policy unchanged. |
-| `site.yml` | Verify development-user login and sudo, then configure the host. |
+| Start work on a project | Git clones the GitHub repositories you tag into a private projects folder. Herdr gives each managed checkout a terminal workspace. Existing branches and edits stay where you left them. |
+| Build and test | Zulu Java 25 and Gradle through SDKMAN, per-project Java selection through jenv, Go, Rust and Cargo, plus Podman and Podman Compose for containers. |
+| Work with Codex | The Codex CLI, a toolkit of skills and global instructions, and TokenEconomizer for per-project tool and usage settings. You authorize your own Codex and ClickUp accounts. |
+| Switch devices | Herdr keeps terminals alive across SSH disconnects. Moshi on your phone can find project workspaces and show agent events. Mosh supports roaming connections. |
+| Use credentials in a command | A local Doppler service passes selected secrets to the program that needs them. It works in SSH, tmux, and Herdr. |
+| Keep the host maintained | A development account with sudo and key-based SSH, daily unattended updates, and verified SSH settings. Automatic reboots and firewall activation are opt-in. |
 
-## Documentation
+## Set up your first server
 
-- [GitHub workflow](docs/github-deployment.md): environment setup, manual bootstrap, and automatic inventory runs.
-- [Configuration](docs/configuration.md): shared defaults, host overrides, ownership, and account onboarding.
-- [Development and local runs](docs/development.md): controller setup, local commands, and verification.
-- [Dependency and tool updates](docs/updates.md): Dependabot, version pins, checksums, and the upgrade procedure.
-- [Doppler secrets](docs/doppler.md): encrypted token setup and selected secrets for normal SSH/tmux/Herdr sessions.
-- [Herdr and Moshi](docs/herdr.md): persistent workspaces, phone pairing, session discovery, and automatic window titles.
-- [Work repositories](docs/work-repositories.md): topic selection, GitHub SSH access, and safe archive/restore behavior.
-- [Codex toolkit](docs/agent-toolkit.md): managed plugins, global instructions, updates, and the separate development checkout.
-- [TokenEconomizer](docs/tokeneconomizer.md): pinned Codex plugin, hook approval, repository learning, and tool-pruning settings.
-- [Setup history](ansible.md): the historical commands that informed these playbooks.
+1. **Bring a reachable VPS.** Fork this repository or use a copy you administer. Use Debian or Ubuntu with Python 3, OpenSSH, APT, and systemd. The roles support AMD64 and ARM64. CI exercises Debian 13 and Ubuntu 24.04 on AMD64. Keep access to the provider console while setting up SSH.
+2. **Choose your projects and integrations.** The defaults sync repositories owned by `alx4j` and install that owner's Codex toolkit. For your own VPS, choose your GitHub owner and topic or turn off these integrations. Both enabled integrations need a GitHub credential in Doppler. [Setup choices](docs/github-deployment.md#choose-what-to-install)
+3. **Run Bootstrap VPS.** Save the development account, deployment key, sudo password, and trusted host keys in GitHub. Then open **Actions → Bootstrap VPS → Run workflow**. GitHub runs Ansible for you. [GitHub walkthrough](docs/github-deployment.md) · [Local alternative](docs/development.md#prepare-the-controller)
+4. **Finish the account setup over SSH.** Sign in to Codex, authorize ClickUp in your browser, pair Moshi if you use a phone, and review TokenEconomizer's hooks. [First-login checklist](docs/first-login.md)
 
-## Repository map
+## Open your first workspace
 
-```text
-ansible-playbooks/
-├── bootstrap.yml                 # Create the development account through the initial administrator
-├── access.yml                    # Probe existing SSH and sudo access
-├── site.yml                      # Configure the server through the development account
-├── inventories/development/      # Servers and host-specific settings
-├── roles/dev_host/
-│   ├── defaults/main.yml         # Shared settings, tool versions, and checksums
-│   ├── tasks/                    # Account, tools, services, firewall, and SSH configuration
-│   ├── templates/                # Shell environment and service/configuration files
-│   ├── files/                    # SSH configuration validator
-│   └── handlers/                 # Reload or restart services after changes
-├── roles/doppler_secrets/        # Encrypted credential, isolated service, and Codex skill wrapper
-├── roles/github_access/          # Shared GitHub API client, SSH enrollment, and verified host key
-├── roles/agent_toolkit/          # Managed toolkit checkout, Codex plugins, and global instructions
-├── roles/work_repositories/      # GitHub topic discovery, SSH checkouts, and archive/restore
-├── scripts/                      # Controller setup, workflow runner, and test entry points
-├── tests/                        # Unit tests, container fixtures, and full VM checks
-├── requirements.txt              # One Ansible core pin for controllers and test images
-├── requirements-dev.txt          # Additional validation tools
-├── requirements.yml              # Ansible collection pins
-├── .github/workflows/            # Validation and Bootstrap VPS
-├── .github/dependabot.yml         # Scheduled dependency update PRs
-└── docs/                         # Setup, configuration, testing, and upgrades
+In the development account's SSH shell, run:
+
+```bash
+cd "$PROJECTS_DIR"
+herdr
 ```
+
+Pick a project in the sidebar and run `codex` or your usual build command. Press **Ctrl-B, Q** to detach. Reconnect with `herdr` or select the same workspace in Moshi. With project sync disabled, you can create a workspace for any checkout yourself. [Herdr and Moshi guide](docs/herdr.md)
+
+## Make it yours
+
+| I want to… | Guide |
+| --- | --- |
+| Choose a Java version, projects folder, SSH port, or firewall policy | [Host configuration](docs/configuration.md#common-host-overrides) |
+| Add projects, find an archived checkout, or change the GitHub owner | [Work repositories](docs/work-repositories.md) |
+| Use a secret from a terminal or rotate the server's access | [Doppler](docs/doppler.md) |
+| Change the skills Codex installs or edit global instructions | [Codex toolkit](docs/agent-toolkit.md) |
+| Adjust tool pruning or repeated-failure prompts | [TokenEconomizer](docs/tokeneconomizer.md) |
+| Update servers, run the tests, or change a tool version | [Deployment](docs/github-deployment.md#3-apply-later-changes) · [Verification](docs/development.md#verification) · [Updates](docs/updates.md) |
+| See how the original host was set up by hand | [Setup history](docs/history/original-host.md) |

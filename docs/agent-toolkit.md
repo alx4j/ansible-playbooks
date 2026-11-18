@@ -1,67 +1,17 @@
-# Codex agent toolkit
+# Give Codex the same skills on every VPS
 
-Every **Bootstrap VPS** run updates a dedicated checkout of
-`alx4j/alx4j-agent-toolkit` from `main`, registers its local marketplace, installs
-the selected Codex plugins, and links the toolkit's global instructions. The
-default plugins are `common`, `game-development`, `infrastructure`, and
-`productivity`.
+Bootstrap installs a shared set of Codex plugins and global instructions for the development account. The default toolkit is `alx4j/alx4j-agent-toolkit`. Its four plugin packages are `common`, `game-development`, `infrastructure`, and `productivity`.
 
-The toolkit needs the same Doppler-managed `GITHUB_TOKEN` and verified GitHub SSH
-access as [project synchronization](work-repositories.md#github-access). It works
-independently of `PROJECTS_TOPIC` and `work_repositories_enabled`. No additional
-GitHub environment variable or secret is required. The pinned Codex 0.169.0
-requires `.codex-plugin/plugin.json` compatibility manifests in the toolkit.
+## 1. Choose the source and plugins
 
-## Source, installation, and development
+The managing account needs a Doppler-backed GitHub credential and working GitHub SSH access to the toolkit repository. The toolkit has its own checkout, so you can use it even with project sync turned off. A project topic is only needed if you also want a separate editable clone. [GitHub access setup](work-repositories.md#github-access)
 
-| Location | Owner and behavior |
-| --- | --- |
-| `$PROJECTS_DIR/alx4j-agent-toolkit` | Your editable checkout. Add the configured `PROJECTS_TOPIC` to the GitHub repo to have it cloned when absent. Existing branches, commits, and files are preserved. |
-| `~/.local/share/alx4j-agent-toolkit` | Ansible's dedicated checkout. Each run updates it from `main`; local changes, another branch, or unpushed commits stop the update. |
-| `~/.codex/plugins/cache/alx4j-agent-toolkit/` | Codex's installed packages. Ansible compares versions and package contents and installs only missing, disabled, or changed packages. |
-| `~/.codex/AGENTS.md` | Symlink to the managed checkout's `config/codex/AGENTS.md`. Start a new Codex session to load updated instructions. |
-
-Edit skills, scripts, manifests, and global instructions in the working copy.
-Test packaged changes through a local marketplace in a separate Codex home so
-the development marketplace does not replace the normal installation. Increment
-the affected plugin's version in both manifests and merge your toolkit PR.
-
-Then rerun **Bootstrap VPS**. A validated merge to `ansible-playbooks/main` also
-updates the managed toolkit on reachable inventory servers. A merge to the
-toolkit repository alone does not trigger server updates. There is no polling
-service or cross-repository trigger.
-
-Removing the topic can archive the inactive working copy under the usual project
-safeguards. It does not affect the managed checkout, installed plugins, or global
-instructions. A dirty managed checkout is preserved with an error; move that work
-into the editable checkout before retrying. Existing unmarked directories at the
-managed path are not adopted or overwritten.
-
-## Existing installations
-
-After all selected plugins install successfully, Ansible moves an existing
-`AGENTS.md` and the old standalone `~/.codex/skills/doppler-secrets` into unique
-directories under `~/.local/share/agent-toolkit-backups/`. Local customizations are
-retained, and the run reports the backup paths. It then creates the instructions
-symlink. Other standalone skills and unrelated Codex configuration remain intact.
-
-An existing nonempty `AGENTS.override.md` takes precedence over `AGENTS.md`; the
-run reports a warning and preserves it. A toolkit marketplace already registered
-to another checkout stops the installation instead of replacing that source.
-
-The `common` plugin owns the Doppler skill. Ansible continues to own the encrypted
-credential service and the stable automation client at
-`/usr/local/lib/doppler-secrets/client.py`. Project synchronization uses that
-stable client, so plugin upgrades do not change its executable path. Plugins do
-not contain credentials or install the system service.
-
-## Inventory settings
-
-Defaults live in [the toolkit role](../roles/agent_toolkit/defaults/main.yml).
+### Inventory settings
 
 ```yaml
 agent_toolkit_enabled: true
 agent_toolkit_manage_instructions: true
+agent_toolkit_owner: alx4j
 agent_toolkit_plugins:
   - common
   - game-development
@@ -69,12 +19,32 @@ agent_toolkit_plugins:
   - productivity
 ```
 
-`common` is required. Removing another plugin from the list stops managing it;
-it does not uninstall an existing package. Disabling the role leaves the
-checkout, installed plugins, and instruction symlink intact. Set
-`agent_toolkit_manage_instructions: false` before supplying an independent
-`dev_host_codex_instructions_source`.
+Set `agent_toolkit_owner` to the authenticated GitHub user. By default the role looks for `alx4j-agent-toolkit` under that owner. Set `agent_toolkit_repository` for a different compatible SSH repository. Keep `common` in the selection. Codex 0.169.0 needs the toolkit's `.codex-plugin/plugin.json` compatibility manifests. For a host without a suitable toolkit, set `agent_toolkit_enabled: false` before bootstrap. [Role defaults](../roles/agent_toolkit/defaults/main.yml)
 
-Check mode does not clone the toolkit or install plugins. The configuration
-tracks the current toolkit `main`; it is repeatable for unchanged inputs, not a
-historical package lock.
+## 2. Install and use the toolkit
+
+Run **Bootstrap VPS**, then start a new Codex session to load the global instructions. Each run updates the managed checkout from `main`, registers its local marketplace, and installs missing, changed, or disabled packages. Package contents are checked even when the version number is unchanged.
+
+| Location | What belongs there |
+| --- | --- |
+| `$PROJECTS_DIR/alx4j-agent-toolkit` | Your editable checkout if you select the repository for project sync. Work on branches here. |
+| `~/.local/share/alx4j-agent-toolkit` | Ansible's managed checkout. Leave it clean and on `main` so it can advance safely. |
+| `~/.codex/plugins/cache/alx4j-agent-toolkit/` | Installed plugin packages that Codex runs. |
+| `~/.codex/AGENTS.md` | Link to `config/codex/AGENTS.md` in the managed checkout. |
+
+The `common` plugin supplies the Doppler skill. Ansible supplies the local credential service and stable client at `/usr/local/lib/doppler-secrets/client.py`. Project sync uses that stable client across plugin upgrades. [Using Doppler](doppler.md)
+
+## 3. Publish a toolkit change
+
+1. Edit the skill, script, manifest, or global instructions in your **editable checkout**.
+2. Test the packaged changes with a local marketplace in a separate Codex home. Bump the affected plugin's version in both manifests and merge the toolkit PR.
+3. Rerun **Bootstrap VPS** or wait for a validated merge to this bootstrap repository's `main`. A toolkit merge alone starts no deployment.
+4. Start a new Codex session to use the updated instructions.
+
+## Existing installations
+
+After all selected plugins install successfully, Ansible backs up an existing `AGENTS.md` and the old standalone `~/.codex/skills/doppler-secrets` under `~/.local/share/agent-toolkit-backups/`. The run reports the backup paths. Then it links the toolkit instructions. An existing nonempty `AGENTS.override.md` still takes precedence and produces a warning.
+
+If the managed checkout has local edits, unpushed commits, a different branch, or no ownership marker, inspect it before rerunning. Move work you want to keep into the editable checkout. A marketplace registered to another source also needs to be resolved before installation proceeds.
+
+Removing a plugin from inventory stops managing it. Disabling the role leaves installed packages and links in place. To supply independent instructions, set `agent_toolkit_manage_instructions: false` before setting `dev_host_codex_instructions_source`. Removing a project topic affects only the editable clone. Check mode skips cloning and installation.

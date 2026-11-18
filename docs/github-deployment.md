@@ -1,92 +1,71 @@
-# Bootstrap VPS from GitHub Actions
+# Set up a VPS with GitHub Actions
 
-**Bootstrap VPS** handles first setup manually and applies later configuration changes automatically after `main` passes validation. Pull requests run tests without contacting inventory servers.
+Use **Bootstrap VPS** to configure one new server. After that, GitHub can apply reviewed changes to the servers you list in inventory. The runner supplies Ansible. To use this for your own servers, fork the repository or use a copy you administer, enable GitHub Actions, and have the provider's SSH and console access ready.
+
+## Choose what to install
+
+The default setup includes two integrations that use private GitHub access. Choose them before the first run.
+
+| Feature | Default | For your own account |
+| --- | --- | --- |
+| Project workspaces | Clone `alx4j` repositories tagged `work` and open them in Herdr. | Set `work_repositories_owner` to your GitHub username and tag the repositories you want. Or set `work_repositories_enabled: false`. |
+| Codex toolkit | Install plugins and global instructions from `alx4j/alx4j-agent-toolkit`. | Use a compatible toolkit repository and its owner, or set `agent_toolkit_enabled: false`. The Codex CLI remains available. |
+
+Both integrations fetch `GITHUB_TOKEN` from the VPS's Doppler service and use SSH for Git. On a fresh server, configure Doppler if you enable either one. You can turn both off and still use the language tools, containers, Codex, Herdr, and Moshi. [GitHub permissions](work-repositories.md#github-access) · [Toolkit settings](agent-toolkit.md#inventory-settings) · [Doppler setup](doppler.md)
 
 ## 1. Configure the environment
 
-Use the `development` environment in **Settings → Environments**, creating it if needed. Restrict its allowed branches to `main`. Existing environment protection rules also apply to automatic runs.
+1. In **Settings → Environments**, create `development`. Restrict deployment to `main`. Environment approvals also apply to automatic runs.
+2. Add the settings below. GitHub distinguishes *variables* from *secrets*. Save them in this environment so the deployment job receives them.
+3. Edit the [development inventory](../inventories/development/hosts.yml). Replace the empty `hosts: {}` with a `hosts:` mapping and add your server. Use its DNS name, or set `ansible_host` for an alias. Put host-specific integration choices here. An empty inventory opts out of automatic runs. [Inventory example](configuration.md#inventory-and-shared-defaults)
 
-Save these settings once:
-
-| Name | GitHub setting | Value |
+| GitHub setting | Kind | What to enter |
 | --- | --- | --- |
-| `SUDO_USER` | Variable | Required non-root account name for routine SSH and sudo. Its value stays outside the repository. |
-| `SUDO_PASSWORD` | Secret | That account's sudo password. Bootstrap uses it when creating the account; existing passwords are preserved. |
-| `ANSIBLE_SSH_PRIVATE_KEY` | Secret | Dedicated, unencrypted SSH key for runner → development account. Bootstrap derives and installs its public key. |
-| `ANSIBLE_KNOWN_HOSTS` | Variable | Independently verified OpenSSH host-key entries for every managed server. |
-| `ANSIBLE_SSH_PORT` | Optional variable | Existing SSH port; defaults to `22`. This does not change the server's listening port. |
-| `PROJECTS_DIR` | Optional variable | Projects folder name inside the development user's home, such as `code`; defaults to `projects`. |
-| `PROJECTS_TOPIC` | Optional variable | GitHub topic used to select repositories to synchronize; defaults to `work`. |
-| `DOPPLER_TOKEN` | Optional secret | Read-only Doppler Service Token; enables encrypted credential storage and the local secret service for Codex skills. |
+| `SUDO_USER` | Variable | Non-root development account to create or reuse for daily SSH and sudo. |
+| `SUDO_PASSWORD` | Secret | Sudo password for that account. Choose it for a new account or supply the current one. Use a single line of up to 256 UTF-8 bytes. |
+| `ANSIBLE_SSH_PRIVATE_KEY` | Secret | Dedicated, unencrypted deployment key. Bootstrap installs the public half for the development user. |
+| `ANSIBLE_KNOWN_HOSTS` | Variable | Verified OpenSSH host-key entries for the addresses the runner connects to. Use `[hostname]:port` for a nondefault port. Verify the key through the provider console or another trusted channel. |
+| `DOPPLER_TOKEN` | Secret | Read-only service token for the Doppler config this VPS should use. Needed when provisioning Doppler for the default integrations. |
+| `ANSIBLE_SSH_PORT` | Optional variable | Existing SSH port, default `22`. The runner must be able to reach it. |
+| `PROJECTS_DIR` | Optional variable | Folder name inside the development user's home, default `projects`. |
+| `PROJECTS_TOPIC` | Optional variable | GitHub topic selecting project repositories, default `work`. |
 
-These account and key settings are shared across the inventory. GitHub maps `SUDO_USER` to the controller variable `DEPLOY_SUDO_USER`; variables are not automatically masked in logs. Missing required settings stop the run before any connection.
+For example, replace the empty `hosts` entry with this block to set up the development tools on your own server without GitHub project sync or the personal toolkit. Keep the surrounding `development.vars` mapping and replace the example address with yours.
 
-Choose `SUDO_PASSWORD` for a new account, or supply its current password when the account already exists. Changing the secret does not rotate existing passwords. Use a single-line value of at most 256 UTF-8 bytes.
+```yaml
+      hosts:
+        my-vps:
+          ansible_host: vps.example.com
+          work_repositories_enabled: false
+          agent_toolkit_enabled: false
+```
 
-The [development inventory](../inventories/development/hosts.yml) contains server names and a shared reference to `SUDO_USER`, with optional addresses, ports, and role settings. Add another server under `development.hosts`; no bootstrap username or per-server password secret is stored there. Existing `BOOTSTRAP_*_PASSWORD` secrets are unused and may be deleted. All hosts are currently commented out. To enable a host, change `hosts: {}` to `hosts:` and uncomment its entry. With no enabled hosts, automatic runs report that there is nothing to configure and make no connections.
+Choose `my-vps` as the workflow target to apply those settings. If you want project sync, set `work_repositories_enabled: true`, add `work_repositories_owner` under that host, and configure the Doppler and GitHub credentials described above.
 
-Obtain each SSH host key through a trusted channel such as the provider console. The entry must match the connection address, including an `ansible_host` override. For a nondefault port, use `[hostname]:port` in `known_hosts`. An unverified `ssh-keyscan` result does not establish trust. The runner must be able to reach each server's SSH port.
-
-When supplied, `DOPPLER_TOKEN` is delivered only to the routine `site` play and encrypted on the VPS. It is excluded from access probes, initial-user bootstrap, and generated inventory. See [Doppler setup and rotation](doppler.md). Omitting it leaves any existing service and credential unchanged. Standard GitHub Actions usage and billing apply.
-
-[Work repository synchronization](work-repositories.md) is enabled by default.
-It requires the local Doppler service and a `GITHUB_TOKEN` in its Doppler config
-with access to your selected repositories. Fresh-server SSH enrollment also
-needs **Git SSH keys: read/write** permission, or manual registration of the
-server's generated public key. Disable `work_repositories_enabled` in inventory
-if this host should not synchronize projects. The GitHub token stays in Doppler;
-do not add another workflow secret for it.
-
-The [Codex toolkit](agent-toolkit.md) uses the same access to update its managed
-checkout and install plugins. Include `alx4j-agent-toolkit` in the GitHub token's
-repository access. Toolkit installation is independent of project topics; add
-the configured `PROJECTS_TOPIC` to that repo only when you also want an editable
-working copy. Disable `agent_toolkit_enabled` in inventory to leave toolkit
-installation unmanaged on a host.
+These account settings are shared across inventory servers. Existing account passwords are preserved. Changing `SUDO_PASSWORD` in GitHub alone cannot rotate the server password. Host variables can override the port and project settings. An unlisted manual target uses shared defaults, so list it first if you need your integration choices to apply.
 
 ## 2. Establish access
 
-Open **Actions → Bootstrap VPS → Run workflow**, select `main`, and fill in:
+1. Open **Actions → Bootstrap VPS → Run workflow** and select `main`.
+2. Set `server_address` to one hostname, IP address, or inventory alias. For a fresh VPS, set `bootstrap_user` to the initial administrator supplied by your provider. The default is `root`.
+3. Prefer key-based bootstrap when available. Leave `bootstrap_password` blank if the initial account accepts the deployment key and can run sudo without a prompt. Otherwise, this input supplies the initial account's SSH password and, for a non-root user, its sudo password. **GitHub retains this ordinary form input in the workflow event data.** The first step masks it in logs. Use the [local procedure](development.md#bootstrap-and-apply) for interactive password entry or separate SSH and sudo passwords. The workflow rejects surrounding whitespace.
+4. Run the workflow and read the job summary. It first tests the development account. If access is missing, it uses the initial administrator to create the account and install the deployment public key. It then reconnects as the development user, verifies sudo, and configures the host. An existing account with a failing sudo check needs its credentials corrected.
+5. SSH in with a key authorized for the development account. Complete the [first-login checklist](first-login.md), including [ClickUp authorization](first-login.md#authorize-clickup-mcp). To rerun a configured server later, enter just its address.
 
-| Input | Value |
-| --- | --- |
-| `server_address` | Server hostname, IP address, or inventory alias. |
-| `bootstrap_user` | Initial administrator username, such as `debian`. Blank defaults to `root`. |
-| `bootstrap_password` | Initial SSH password; also used for sudo when the initial administrator is not root. |
-
-The initial administrator must already have sudo access. If its SSH and sudo passwords differ, use [local bootstrap](development.md#bootstrap-and-apply). Leaving the password blank requires the deployment key to be authorized for that initial account and noninteractive sudo to work.
-
-`bootstrap_password` is an ordinary workflow input, not a hidden password field or GitHub secret. The first step masks it in logs, but it remains in the workflow event data. Disabling password SSH later does not invalidate it for sudo, `su`, or console login. Surrounding whitespace is rejected because Ansible strips it from connection-password files.
-
-The manual run first checks development-account key and sudo access. If that connection is unavailable, it uses the initial administrator to create the configured account, grant sudo, and install the public key. It then reconnects through the development account and applies `site.yml`. Incorrect initial credentials fail the manual run. An existing development account with failing sudo also fails without attempting bootstrap.
-
-Manual runs select one server. A registered alias or address uses that host's inventory port and configuration overrides, just as automatic runs do. Unlisted addresses use the shared defaults. Initial credentials always come from the form. Host patterns, shell options, and multiple targets are rejected. All connections enforce the saved host keys. Keep provider-console access available for recovery.
+`bootstrap_password` and `SUDO_PASSWORD` belong to different accounts. Disabling password-based SSH still leaves an initial password usable for other purposes such as console login. Keep provider-console access available while changing SSH or sudo.
 
 ## 3. Apply later changes
 
-Merge configuration changes into `main`. After **Validate playbooks** succeeds for that push, the same **Bootstrap VPS** workflow checks out the validated commit and processes inventory servers one at a time:
+Open a PR and review its validation results. After a merge, a successful **Validate playbooks** run for the current `main` push triggers **Bootstrap VPS**. The workflow processes inventory servers one at a time.
 
-- Working development-account SSH and sudo access: apply `site.yml`.
-- Missing account, rejected key, unavailable SSH, or failed sudo/access checks: warn, leave the server unchanged, and continue.
-- Invalid inputs, runner errors, or failed configuration: fail the workflow. A configuration failure is never presented as a skipped server.
+| Summary | What happened | What to do |
+| --- | --- | --- |
+| Updated | The development account had working SSH and sudo, and the playbook completed. | Use the updated host. |
+| Skipped | The access check failed. The automatic run left that server alone and continued. | Check connectivity and credentials. Run the manual workflow for a new host. |
+| Failed | The inputs, runner, or configuration step failed. | Fix the reported cause and rerun. |
 
-Automatic runs never try initial credentials, derive an account-creation password hash, or run `bootstrap.yml`. A warning means access is unavailable; it does not prove the account is absent. Check access, or run **Bootstrap VPS** manually for first setup.
+A successful job can contain skipped servers. PR validation uses test environments. Only the current, successfully validated `main` push can trigger inventory deployment. Manual and automatic deployments share one concurrency group. An active deployment runs to completion, and a newer pending run may replace an older pending one. Standard GitHub Actions usage and billing apply.
 
-The job summary lists every server as updated, skipped, or failed. A run with only skipped servers succeeds with warnings and lists every skip; no server is reported as updated. Failed or canceled validation, PR validation, and validation for an older commit do not start automatic configuration.
+## What runs on the controller
 
-You can still rerun one server manually with just its address once development access works. Both paths share a concurrency group, so they cannot change servers simultaneously. Running setup is not canceled; a newer pending run can replace an older pending run.
-
-## Execution details
-
-Both paths install pinned dependencies through `scripts/setup` and run `scripts/check`. The deployment steps receive routine SSH/sudo credentials and the optional Doppler Service Token. Inventory resolution runs without credentials in its subprocess environment; automatic runs preserve resolved host-specific role settings and ports while enforcing the configured development account.
-
-`scripts/github-deploy.py` creates a temporary inventory for exactly one server at each stage. `scripts/deploy` checks syntax and target selection, enforces host-key checking, and uses separate SSH control directories so earlier connections cannot bypass authentication. Passwords are never passed as command arguments. Credential files use mode `0600` inside a `0700` temporary directory, removed on exit and ordinary cancellation. Initial credentials and the account-creation hash are excluded from routine Ansible subprocesses.
-
-Manual account creation derives a salted SHA-512 crypt hash from `SUDO_PASSWORD` through OpenSSL stdin. The account uses `update_password: on_create`, preserving existing passwords. Codex/ClickUp login, Moshi QR pairing, and TokenEconomizer hook approval remain [interactive onboarding](configuration.md#account-onboarding).
-
-After bootstrap succeeds, connect as the development account and run
-`moshi-hook host setup`, then scan the terminal's QR using **Easy Pair** in the
-Moshi app. The QR grants temporary SSH access and is never printed by the
-workflow. See [the pairing steps](configuration.md#pair-moshi-with-the-qr-code).
-
-See [verification](development.md#verification) for test coverage and limits. GitHub documents [workflow completion triggers](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run), [manual inputs](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs), and [concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+[The deployment workflow](../.github/workflows/deploy.yml) runs `scripts/setup` and `scripts/check`. The [deployment runner](../scripts/github-deploy.py) builds a temporary inventory for one server per stage. [The deploy script](../scripts/deploy) checks the target and syntax, verifies host keys, and uses a separate SSH connection for each stage. Credentials use private temporary files that are cleaned up on exit or ordinary cancellation. The Doppler service token only enters the routine host configuration stage. [Test coverage](development.md#verification)
