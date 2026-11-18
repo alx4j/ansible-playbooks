@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reconcile GitHub work topics with owned SSH checkouts; never delete projects."""
+"""Clone missing SSH checkouts for repositories with the configured GitHub topic."""
 
 import argparse
 import ctypes
@@ -15,7 +15,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import uuid
 
 
 # Both installed module directories are root-owned; -I excludes user Python paths.
@@ -23,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import process_activity as activity
 
 sys.path.insert(0, "/usr/local/lib/github-access")
-from github_access import ApiError, GitHub, Git as AccessGit, SyncError, require_token_owner
+from github_access import GitHub, Git as AccessGit, SyncError, require_token_owner
 
 
 def repo_info(value):
@@ -268,8 +267,8 @@ class Reconciler:
             del record["pending"]
             self.save()
 
-    def move(self, ident, record, relative, state, action):
-        source, destination = self.path(record["path"]), self.path(relative)
+    def restore(self, record, name):
+        source, destination = self.path(record["path"]), self.path(name)
         if destination.exists():
             self.skip(record["repo"], "destination already exists")
             return
@@ -280,15 +279,13 @@ class Reconciler:
         if reason:
             self.skip(record["repo"], reason)
             return
-        if destination.parent != self.projects:
-            destination.parent.mkdir(mode=0o700, exist_ok=True)
-        record["pending"] = {"path": relative, "state": state}
+        record["pending"] = {"path": name, "state": "active"}
         self.save()
         # Rename on the same filesystem retains ignored files, branches, stashes, and uncommitted work.
         rename_exclusive(source, destination)
         record.update(record.pop("pending"))
         self.save()
-        self.report[action].append(record["repo"])
+        self.report["restored"].append(record["repo"])
 
     def clone(self, repo):
         ident, name = repo["id"], repo["name"]
@@ -319,25 +316,7 @@ class Reconciler:
                 raise SyncError("Another repository synchronization is already running.") from None
             self.data = self.load()
             self.records = self.data["repositories"]
-            # Complete discovery and positive removal checks before cloning or moving anything.
             desired = discover(self.api, self.owner, self.topic)
-            removed = set()
-            for ident, record in self.records.items():
-                if ident in desired or record["state"] == "archived":
-                    continue
-                try:
-                    current = repo_info(self.api.request("/repos/" + record["repo"]))
-                except ApiError as error:
-                    if error.status == 404:
-                        self.skip(record["repo"], "repository is inaccessible; topic removal was not confirmed")
-                        continue
-                    raise
-                if current["id"] != ident or current["owner"].lower() != self.owner.lower():
-                    self.skip(record["repo"], "repository identity or owner changed")
-                elif self.topic not in current["topics"]:
-                    removed.add(ident)
-                else:
-                    self.skip(record["repo"], "topic still exists; repository listing changed during discovery")
             self.recover_moves()
             if desired:
                 self.report["changed"] |= self.git.enroll(self.api, self.owner)
@@ -363,22 +342,9 @@ class Reconciler:
                         record["state"] = "active"
                     self.save()
                 if record["state"] == "archived":
-                    self.move(ident, record, repo["name"], "active", "restored")
+                    self.restore(record, repo["name"])
                 else:
                     self.report["kept"].append(repo["repo"])
-            for ident in removed:
-                record = self.records[ident]
-                if record["state"] == "archived":
-                    continue  # Recovery may have completed an earlier archive move.
-                path = self.path(record["path"])
-                if not self.git.owned(path, ident, record["origin"]):
-                    self.skip(record["repo"], "checkout ownership could not be verified")
-                    continue
-                archive = self.projects / ".archive"
-                if archive.is_symlink() or archive.exists() and not archive.is_dir():
-                    raise SyncError("The archive path is not a real directory.")
-                target = f".archive/{ident}-{path.name}-{uuid.uuid4().hex[:12]}"
-                self.move(ident, record, target, "archived", "archived")
             if self.herdr is not None:
                 repositories = []
                 for ident in desired:

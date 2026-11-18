@@ -17,24 +17,25 @@ Both integrations fetch `GITHUB_TOKEN` from the VPS's Doppler service and use SS
 
 1. In **Settings → Environments**, create `development`. Restrict deployment to `main`. Environment approvals also apply to automatic runs.
 2. Add the settings below. GitHub distinguishes *variables* from *secrets*. Save them in this environment so the deployment job receives them.
-3. Edit the [development inventory](../inventories/development/hosts.yml). Replace the empty `hosts: {}` with a `hosts:` mapping and add your server. Use its DNS name, or set `ansible_host` for an alias. Put host-specific integration choices here. An empty inventory opts out of automatic runs. [Inventory example](configuration.md#inventory-and-shared-defaults)
+3. Edit the [development inventory](../inventories/development/hosts.yml). Replace the empty `hosts: {}` with a `hosts:` mapping and add your server. Use `user@hostname` with the sudo username chosen during bootstrap. Set `ansible_host` if the hostname is an alias. Put host-specific integration choices here. An empty inventory opts out of automatic runs. [Inventory example](configuration.md#inventory-and-shared-defaults)
 
 | GitHub setting | Kind | What to enter |
 | --- | --- | --- |
-| `SUDO_USER` | Variable | Non-root development account to create or reuse for daily SSH and sudo. |
 | `SUDO_PASSWORD` | Secret | Sudo password for that account. Choose it for a new account or supply the current one. Use a single line of up to 256 UTF-8 bytes. |
-| `SUDO_PRIVATE_KEY` | Secret | Dedicated, unencrypted deployment key. Bootstrap installs the public half for the development user. |
+| `ANSIBLE_SSH_PRIVATE_KEY` | Secret | Dedicated, unencrypted deployment key. Bootstrap installs the public half for the development user. |
 | `ANSIBLE_KNOWN_HOSTS` | Variable | Verified OpenSSH host-key entries for the addresses the runner connects to. Use `[hostname]:port` for a nondefault port. Verify the key through the provider console or another trusted channel. |
 | `DOPPLER_TOKEN` | Secret | Read-only service token for the Doppler config this VPS should use. Needed when provisioning Doppler for the default integrations. |
 | `ANSIBLE_SSH_PORT` | Optional variable | Existing SSH port, default `22`. The runner must be able to reach it. |
 | `PROJECTS_DIR` | Optional variable | Folder name inside the development user's home, default `projects`. |
 | `PROJECTS_TOPIC` | Optional variable | GitHub topic selecting project repositories, default `work`. |
 
-For example, replace the empty `hosts` entry with this block to set up the development tools on your own server without GitHub project sync or the personal toolkit. Keep the surrounding `development.vars` mapping and replace the example address with yours.
+If the deployment key is currently saved as `SUDO_PRIVATE_KEY`, save the same key under `ANSIBLE_SSH_PRIVATE_KEY` in the `development` environment.
+
+For example, replace the empty `hosts` entry with this block to set up the development tools on your own server without GitHub project sync or the personal toolkit. Replace the example account and address with yours.
 
 ```yaml
       hosts:
-        my-vps:
+        dev@my-vps:
           ansible_host: vps.example.com
           work_repositories_enabled: false
           agent_toolkit_enabled: false
@@ -42,19 +43,31 @@ For example, replace the empty `hosts` entry with this block to set up the devel
 
 Choose `my-vps` as the workflow target to apply those settings. If you want project sync, set `work_repositories_enabled: true`, add `work_repositories_owner` under that host, and configure the Doppler and GitHub credentials described above.
 
-These account settings are shared across inventory servers. The development account keeps its existing sudo password. Changing `SUDO_PASSWORD` in GitHub alone cannot rotate the server password. Host variables can override the port and project settings. An unlisted manual target uses shared defaults, so list it first if you need your integration choices to apply.
+The runner key and sudo password are shared across inventory servers. Each update target supplies its own username. The development account keeps its existing sudo password. Changing `SUDO_PASSWORD` in GitHub alone cannot rotate the server password. Host variables can override the port and project settings. An unlisted manual target uses shared defaults, so list it first if you need your integration choices to apply.
 
 ## 2. Establish access
 
 1. Open **Actions → Bootstrap VPS → Run workflow** and select `main`.
 2. Set `server_address` to one hostname, IP address, or inventory alias. For a fresh VPS, set `bootstrap_user` to the initial administrator supplied by your provider. The default is `root`.
-3. Leave `bootstrap_password` blank for key-based setup. For password-based setup, enter a temporary password for the initial administrator. Use a different account and password for `SUDO_USER` and `SUDO_PASSWORD`. **GitHub retains the form input in the workflow event data.** Use [local bootstrap](development.md#bootstrap-and-apply) to enter credentials outside GitHub or when the initial SSH and sudo passwords differ.
-4. Run the workflow. If it needs the initial password, it records the authenticated account on the VPS and creates development access. It then opens a fresh SSH connection with the deployment key, verifies the development user can sudo, and locks the initial account's **local Linux password** before installing the rest of the tools.
+3. Leave `bootstrap_password` blank for key-based setup. For password-based setup, enter a temporary password for the initial administrator. Choose a separate non-root `sudo_user` (default `dev`) and a different `SUDO_PASSWORD`. **GitHub retains the form input in the workflow event data.** Use [local bootstrap](development.md#bootstrap-and-apply) to enter credentials outside GitHub or when the initial SSH and sudo passwords differ.
+4. To authorize your workstation now, paste its OpenSSH public key into `user_public_key`. Leaving it blank skips adding a personal key. Run the workflow. If it needs the initial password, it records the authenticated account on the VPS and creates development access. It then opens a fresh SSH connection with the deployment key, verifies the development user can sudo, and locks the initial account's **local Linux password** before installing the rest of the tools.
 5. SSH in with a key authorized for the development account and complete the [first-login checklist](first-login.md). Bootstrap verifies the runner’s key. Check your workstation key separately and keep provider rescue access available.
 
 The locked password can no longer authenticate the initial account at an ordinary Linux console or for password-based sudo. The development user keeps their own sudo password. Your provider controls any separate rescue login.
 
-If setup stops before the key and sudo checks succeed, the initial password can still work. Rerun **Bootstrap VPS**. Once development access works, enter just the server address. A verified run resumes any recorded lock. If setup stopped before recording the account, or if you entered a valid password on an already configured host and the workflow reported it unused, rotate that password yourself. When restoring password access to a locked initial account, set a **new** password because the old value is still in the event.
+If setup stops before the key and sudo checks succeed, the initial password can still work. Rerun **Bootstrap VPS**. Once development access works, enter the server address and the same sudo username. A verified run resumes any recorded lock. If setup stopped before recording the account, or if you entered a valid password on an already configured host and the workflow reported it unused, rotate that password yourself. When restoring password access to a locked initial account, set a **new** password because the old value is still in the event.
+
+## Upload a public SSH key
+
+Open **Actions → Upload public SSH key → Run workflow**. Enter all three required fields.
+
+| Field | Value |
+| --- | --- |
+| `username` | Existing account that accepts the runner's SSH key. |
+| `server_address` | Hostname, IP address, or registered inventory alias. |
+| `user_public_key` | One OpenSSH public key from your workstation’s `.pub` file. |
+
+The action authenticates as that user with `ANSIBLE_SSH_PRIVATE_KEY`, checks the host against `ANSIBLE_KNOWN_HOSTS`, and adds the key to `~/.ssh/authorized_keys` using the user's own permissions. Uploading an existing key preserves its comment and login restrictions. The action uses the inventory port when configured, then `ANSIBLE_SSH_PORT`, then port 22.
 
 ## 3. Apply later changes
 

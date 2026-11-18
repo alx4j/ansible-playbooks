@@ -1,0 +1,42 @@
+---
+- name: Authorize a public SSH key for the connected account
+  hosts: development
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Read fingerprints of existing authorized keys
+      ansible.builtin.command:
+        argv:
+          - ssh-keygen
+          - -l
+          - -E
+          - sha256
+          - -f
+          - .ssh/authorized_keys
+        chdir: "~"
+        removes: .ssh/authorized_keys
+      environment:
+        LC_ALL: C
+      register: authorized_fingerprints
+      changed_when: false
+      # OpenSSH emits this diagnostic for empty and comment-only files.
+      failed_when: >-
+        authorized_fingerprints.rc != 0 and
+        authorized_fingerprints.stderr | trim != '.ssh/authorized_keys is not a public key file.'
+
+    - name: Add the key when its fingerprint is absent
+      when: authorized_fingerprints.stdout is not search('(?m)^\d+ ' ~ (user_key_fingerprint | regex_escape) ~ ' ')
+      block:
+        - name: Create private SSH files when the account has none
+          ansible.builtin.shell: |
+            set -e
+            umask 077
+            mkdir -p "$HOME/.ssh"
+            touch "$HOME/.ssh/authorized_keys"
+          args:
+            creates: ~/.ssh/authorized_keys
+
+        - name: Append the public key
+          ansible.builtin.lineinfile:
+            path: ~/.ssh/authorized_keys
+            line: "{{ user_public_key }}"

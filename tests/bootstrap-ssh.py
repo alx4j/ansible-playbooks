@@ -69,6 +69,7 @@ def main():
         shutil.copy2(source / "scripts/deploy", root / "scripts/deploy")
         shutil.copy2(source / "scripts/github-deploy.py", root / "scripts/github-deploy.py")
         shutil.copy2(source / "access.yml", root / "access.yml")
+        shutil.copy2(source / "upload-public-key.yml", root / "upload-public-key.yml")
         fixture = yaml.safe_load((source / "tests/fixtures/bootstrap-access.yml").read_text())
         # Exercise the actual bootstrap user/escalation expressions while the
         # fixture limits remote work to account tasks supported by containers.
@@ -81,6 +82,10 @@ def main():
             "name": "Retire the bootstrap password after verified replacement access",
             "ansible.builtin.import_role": {"name": "dev_host", "tasks_from": "finish_bootstrap_password"},
             "when": "dev_host_finish_bootstrap_password | default(false) | bool",
+        })
+        site[0]["tasks"].append({
+            "name": "Maintain the development account and its authorized keys",
+            "ansible.builtin.import_role": {"name": "dev_host", "tasks_from": "account"},
         })
         (root / "site.yml").write_text(yaml.safe_dump(site, sort_keys=False))
         (root / "ansible.cfg").write_text(f"[defaults]\nroles_path = {source / 'roles'}\n")
@@ -135,10 +140,12 @@ def main():
                 "DEPLOY_BOOTSTRAP_PASSWORD": password, "DEPLOY_SSH_PRIVATE_KEY": "",
             }
 
-            def deploy(expect_success=True, github=False, update=False, **overrides):
+            def deploy(expect_success=True, github=False, update=False, upload=False, **overrides):
                 command = ["python3", str(root / "scripts/github-deploy.py")] if github else [str(root / "scripts/deploy")]
                 if update:
                     command.append("--update-inventory")
+                if upload:
+                    command.append("--upload-public-key")
                 result = subprocess.run(
                     command, cwd=root, env={**env, **overrides},
                     text=True, capture_output=True, timeout=120,
@@ -204,19 +211,19 @@ def main():
             registered_inventory = root / "inventories/development/hosts.yml"
             registered_inventory.parent.mkdir(parents=True)
             registered_inventory.write_text(yaml.safe_dump({"all": {"children": {"development": {"hosts": {
-                "testserver": {
+                f"{sudo_user}@testserver": {
                     "ansible_host": "127.0.0.1", "ansible_port": port,
                 },
             }}}}}))
             event = {"inputs": {"server_address": "testserver", "bootstrap_user": "secondadmin",
-                                "bootstrap_password": second_password}}
+                                "bootstrap_password": second_password, "sudo_user": sudo_user,
+                                "user_public_key": wrong_host_key}}
             event_file = root / "event.json"
             event_file.touch(mode=0o600)
             event_file.write_text(json.dumps(event))
             env.update({
                 "GITHUB_EVENT_PATH": str(event_file), "DEPLOY_SSH_PORT": str(port),
                 "DEPLOY_SSH_PRIVATE_KEY": private_key, "SUDO_PASSWORD": sudo_password,
-                "DEPLOY_SUDO_USER": sudo_user,
             })
             host.update({"ansible_user": sudo_user, "dev_host_user": sudo_user})
             output = deploy(False, DEPLOY_PLAYBOOK="access", DEPLOY_INVENTORY=json.dumps(inventory))
@@ -238,7 +245,7 @@ def main():
             # Automatic runs must not bootstrap, even when valid initial credentials
             # are available in an event or a stale caller environment.
             output = deploy(github=True, update=True)
-            assert "::warning::Skipped testserver" in output, output
+            assert f"::warning::Skipped {sudo_user}@testserver" in output, output
             assert "Establishing development access" not in output, output
             try:
                 pwd.getpwnam(sudo_user)
@@ -255,6 +262,8 @@ def main():
             output = deploy(github=True)
             assert "Establishing development access" in output, output
             assert "Configuring the server through development-user SSH key access" in output, output
+            authorized_keys = Path(pwd.getpwnam(sudo_user).pw_dir) / ".ssh/authorized_keys"
+            assert wrong_host_key.split()[1] in authorized_keys.read_text()
 
             check_password_only_login(root, sudo_user, sudo_password, port, host_key)
 
@@ -268,28 +277,65 @@ def main():
             output = deploy(github=True)
             assert "Establishing development access" not in output, "Rerun used the initial administrator"
             assert "changed=0" in output, "Repeated configuration did not converge"
-            event["inputs"] = {"server_address": "127.0.0.1"}
+            event["inputs"] = {"server_address": "127.0.0.1", "sudo_user": sudo_user, "user_public_key": ""}
             event_file.write_text(json.dumps(event))
+            keys_before = authorized_keys.read_bytes()
             deploy(github=True)
+            assert authorized_keys.read_bytes() == keys_before
 
             output = deploy(github=True, update=True, SUDO_PASSWORD="deliberately incorrect development password")
-            assert "Incorrect sudo password" in output and "::warning::Skipped testserver" in output, output
+            assert "Incorrect sudo password" in output and f"::warning::Skipped {sudo_user}@testserver" in output, output
             output = deploy(github=True, update=True, DEPLOY_KNOWN_HOSTS=f"[127.0.0.1]:{port} {wrong_host_key}")
-            assert "::warning::Skipped testserver" in output, output
+            assert f"::warning::Skipped {sudo_user}@testserver" in output, output
 
             # One inaccessible server must not prevent an existing server from updating.
             registered = yaml.safe_load(registered_inventory.read_text())
-            registered["all"]["children"]["development"]["hosts"]["unready"] = {
+            registered["all"]["children"]["development"]["hosts"]["dev@unready"] = {
                 "ansible_host": "127.0.0.2", "ansible_port": port,
             }
             registered_inventory.write_text(yaml.safe_dump(registered))
             summary = root / "summary.md"
             output = deploy(github=True, update=True, GITHUB_STEP_SUMMARY=str(summary))
-            assert "| testserver | Updated |" in summary.read_text(), output
-            assert "| unready | Skipped:" in summary.read_text(), output
+            assert f"| {sudo_user}@testserver | Updated |" in summary.read_text(), output
+            assert "| dev@unready | Skipped:" in summary.read_text(), output
             assert "Establishing development access" not in output, output
             assert "changed=0" in output, output
-            print("Root/sudo bootstrap, key handoff, reruns, automatic inventory updates, and unready-server skips passed")
+            known_hosts = root / "user_known_hosts"
+            known_hosts.write_text(f"[127.0.0.1]:{port} {host_key}\n")
+            login = subprocess.run(
+                ["ssh", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes",
+                 "-o", f"UserKnownHostsFile={known_hosts}", "-i", "/tmp/unrelated-key", "-p", str(port),
+                 f"{sudo_user}@127.0.0.1", "id -un"], text=True, capture_output=True, check=True,
+            )
+            assert login.stdout.strip() == sudo_user
+
+            subprocess.run(["gpasswd", "-d", sudo_user, "sudo"], check=True, capture_output=True)
+            authorized_keys.chmod(0o644)
+            upload_identity = root / "workstation"
+            subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(upload_identity)], check=True)
+            uploaded_key = upload_identity.with_suffix(".pub").read_text()
+            event["inputs"] = {"server_address": "testserver", "username": sudo_user, "user_public_key": uploaded_key}
+            event_file.write_text(json.dumps(event))
+            before = authorized_keys.read_bytes()
+            deploy(False, github=True, upload=True, DEPLOY_KNOWN_HOSTS=f"[127.0.0.1]:{port} {wrong_host_key}")
+            assert authorized_keys.read_bytes() == before
+            upload_result = deploy(github=True, upload=True, SUDO_PASSWORD="")
+            assert "changed=1" in upload_result
+            after = authorized_keys.read_bytes()
+            assert authorized_keys.stat().st_mode & 0o777 == 0o644
+            assert after.startswith(before) and after.count(uploaded_key.split()[1].encode()) == 1
+            upload_login = login.args.copy()
+            upload_login[upload_login.index("-i") + 1] = str(upload_identity)
+            assert subprocess.check_output(upload_login, text=True).strip() == sudo_user
+            assert "changed=0" in deploy(github=True, upload=True, SUDO_PASSWORD="")
+            assert authorized_keys.read_bytes() == after
+            # A duplicate upload must also preserve options on an existing key.
+            restricted = before + b"restrict " + uploaded_key.encode()
+            authorized_keys.write_bytes(restricted)
+            assert "changed=0" in deploy(github=True, upload=True, SUDO_PASSWORD="")
+            assert authorized_keys.read_bytes() == restricted
+            print("Standalone SSH key upload, fingerprint verification, repeat uploads, and restricted keys passed")
+            print("Root/sudo bootstrap, runner and personal SSH access, reruns, per-user updates, and skips passed")
         finally:
             server.terminate()
             try:

@@ -10,8 +10,6 @@ Use a local controller when you want to choose the target yourself, enter SSH an
    scripts/setup
    mkdir -p inventories/local
    cp -i inventories/example/hosts.yml inventories/local/hosts.yml
-   read -r -p "Development account: " DEPLOY_SUDO_USER
-   export DEPLOY_SUDO_USER
    ```
 
 2. Edit `inventories/local/hosts.yml`. Replace the example addresses, remove unused servers, and add the **public** keys you want to authorize. Verify the host's SSH key through the provider console or another trusted channel before connecting. [Inventory example](configuration.md#inventory-and-shared-defaults)
@@ -67,7 +65,7 @@ podman run --rm -v "$PWD:/repo:ro" --workdir /repo docker.io/rhysd/actionlint:1.
 
 The [validation workflow](../.github/workflows/validate.yml) runs three jobs in parallel on PRs and pushes to `main`. The final `validate` job requires all three to pass.
 
-- **Controller checks** cover access failures, credential cleanup, inventory selection, workflow inputs, and failure reporting. Unit tests use temporary repositories and synthetic API responses for discovery, archiving, and interrupted work.
+- **Controller checks** cover access failures, credential cleanup, inventory selection, workflow inputs, and failure reporting. Unit tests use temporary repositories and synthetic API responses for discovery, checkout retention after topic changes, and recovery of older archives.
 - **SSH container** tests the bootstrap-to-development-account transition over loopback SSH. Incorrect passwords or host keys fail. An automatic inventory run skips an inaccessible server and still updates an accessible one.
 - **Full host and tools** bootstraps the VM, checks the working host, then applies again and requires zero changes. It checks service restart times, compiles example programs, verifies Herdr through noninteractive SSH, and exercises plugins with local fixtures. The Doppler tests cover encrypted storage, caller permissions, rotation, and restart using a synthetic token.
 

@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 
-from test_work_repositories import FakeGitHub, SYNC, repository
+from test_work_repositories import FakeGitHub, SYNC, legacy_archive, repository
 
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -53,18 +53,22 @@ def client(port):
     git.run("-C", path, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "push fixture")
     git.run("-C", path, "push", "origin", "main")
     api.repositories[0]["topics"] = []
-    active = subprocess.Popen(["sleep", "60"], cwd=path)
+    assert not sync()["changed"]
+    assert path.is_dir() and not (projects / ".archive").exists()
+    api.repositories[0]["topics"] = ["work"]
+    kept = sync()
+    assert not kept["changed"] and kept["kept"] == ["fixture/one"], kept
+
+    archive = legacy_archive(projects, home / ".local/state/work-repositories/test-projects.json")
+    active = subprocess.Popen(["sleep", "60"], cwd=archive)
     try:
         busy = sync()
         assert not busy["changed"] and busy["skipped"], busy
     finally:
         active.terminate()
         active.wait()
-    archived = sync()
-    assert archived["archived"] == ["fixture/one"], archived
-    assert not sync()["changed"]
-    api.repositories[0]["topics"] = ["work"]
     assert sync()["restored"] == ["fixture/one"]
+    assert not sync()["changed"]
     assert (path / "pushed").read_text() == "written on the development VPS\n"
     # An existing account SSH configuration must work without enrolling another key.
     (home / ".ssh/config").write_text(f"Host github.com\n  IdentityFile {git.key}\n")
@@ -80,7 +84,7 @@ def client(port):
         pass
     else:
         raise AssertionError("SSH accepted a mismatched server host key")
-    print("Real SSH clone/push, host-key rejection, active-process skip, archive/restore, and zero-change reruns passed")
+    print("SSH clone/push, host-key rejection, topic removal, legacy restore safeguards, and zero-change reruns passed")
 
 
 def main():

@@ -10,8 +10,8 @@ fail() {
 }
 
 case "${DEPLOY_PLAYBOOK:-}" in
-  access|bootstrap|site) ;;
-  *) fail 'Select access, bootstrap, or site.' ;;
+  access|bootstrap|site|upload-public-key) ;;
+  *) fail 'Select access, bootstrap, site, or upload-public-key.' ;;
 esac
 if [[ "$DEPLOY_PLAYBOOK" != site ]]; then
   unset DOPPLER_TOKEN

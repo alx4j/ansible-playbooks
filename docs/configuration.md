@@ -14,16 +14,16 @@ After bootstrap, follow the [first-login checklist](first-login.md). You can als
 
 The inventory lists your servers and their exceptions. Role defaults supply shared choices, including tool versions and SSH policy. Use the [development inventory](../inventories/development/hosts.yml) for Actions and an ignored `inventories/local/hosts.yml` for local runs. Start a local file from the [example inventory](../inventories/example/hosts.yml).
 
-1. Put common settings under `development.vars`. Keep the `sudo_user` lookup. Actions supplies `DEPLOY_SUDO_USER` from its `SUDO_USER` variable. Local runs export it explicitly.
-2. Add a name under `development.hosts`. Use `ansible_host` if the name differs from the connection address. Put exceptions for that server under its name.
-3. For local runs, supply at least one approved **public** key. Replace the example below with your own. Include the deployment and workstation public keys you need. For Actions, the runner supplies its own deployment key and configured account.
+1. Put common settings under `development.vars`. For direct Ansible runs, the local inventory template sets `sudo_user: dev`. Override it per host as needed.
+2. Under `development.hosts`, use `user@hostname` for Actions update targets, for example `dev@vps.example.com`. The local template uses host aliases. Set `ansible_host` when the alias differs from the connection address. Put exceptions for that server under its name.
+3. For local runs, supply at least one approved **public** key. Replace the example below with your own. Include the deployment and workstation public keys you need. For Actions, bootstrap authorizes the runner key and any workstation public key supplied in the form. The example below is for direct Ansible runs.
 
 ```yaml
 all:
   children:
     development:
       vars:
-        sudo_user: "{{ lookup('ansible.builtin.env', 'DEPLOY_SUDO_USER', default=undef()) }}"
+        sudo_user: dev
         dev_host_authorized_keys:
           - "ssh-ed25519 REPLACE_WITH_YOUR_PUBLIC_KEY workstation"
       hosts:
@@ -77,7 +77,7 @@ Set the GitHub `PROJECTS_DIR` variable to a **folder name**, such as `code`. Bla
 cd "$PROJECTS_DIR"
 ```
 
-Changing the name starts a separate directory and leaves the old projects and sync state in place. [Choose and archive projects](work-repositories.md)
+Changing the name starts a separate directory and leaves the old projects and sync state in place. [Choose projects and recover older archives](work-repositories.md)
 
 ## Java selection
 
