@@ -128,10 +128,13 @@
   ansible.builtin.import_tasks: client.yml
 
 - name: Create the managed Doppler skill directory
+  become: true
+  become_user: "{{ doppler_secrets_client_user }}"
   when: doppler_secrets_install_skill | bool
   ansible.builtin.file:
     path: "{{ doppler_secrets_client_home }}/{{ doppler_secrets_skill_directory }}"
     state: directory
+    follow: false
     owner: "{{ doppler_secrets_client_user }}"
     group: "{{ doppler_secrets_client_user }}"
     mode: "0755"
@@ -142,6 +145,8 @@
     loop_var: doppler_secrets_skill_directory
 
 - name: Install the Doppler skill and command wrapper
+  become: true
+  become_user: "{{ doppler_secrets_client_user }}"
   when: doppler_secrets_install_skill | bool
   ansible.builtin.copy:
     src: skill/

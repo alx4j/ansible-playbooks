@@ -32,6 +32,17 @@
     - Validate installed SSH configuration
     - Reload SSH
 
+- name: Verify the installed effective policy before any reload
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/validate-ssh-dropin
+      - --installed
+      - "{{ dev_host_ssh_permit_root_login }}"
+      - "{{ dev_host_ssh_password_authentication }}"
+      - "{{ dev_host_ssh_keyboard_interactive_authentication }}"
+  changed_when: false
+  when: not ansible_check_mode
+
 - name: Apply pending service changes before checking access
   ansible.builtin.meta: flush_handlers
 

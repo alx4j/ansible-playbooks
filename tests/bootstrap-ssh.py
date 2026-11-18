@@ -18,6 +18,33 @@ import time
 import yaml
 
 
+def check_password_only_login(root, user, password, port, host_key):
+    """A working password must not qualify as a key-based administrative login."""
+    inventory = root / "password-inventory.yml"
+    known_hosts = root / "password-known-hosts"
+    known_hosts.write_text(f"[127.0.0.1]:{port} {host_key}\n")
+    inventory.write_text(yaml.safe_dump({"development": {"hosts": {"fixture": {
+        "ansible_host": "127.0.0.1", "ansible_port": port, "ansible_user": user, "sudo_user": user,
+        "ansible_ssh_common_args": (f"-o StrictHostKeyChecking=yes -o UserKnownHostsFile={known_hosts} "
+                                    "-o IdentitiesOnly=yes -o IdentityFile=none -o IdentityAgent=none"),
+    }}}}))
+    password_file = root / "password-only"
+    password_file.touch(mode=0o600)
+    password_file.write_text(password)
+    options = ["-i", str(inventory), "--connection-password-file", str(password_file)]
+    env = {**os.environ, "ANSIBLE_SSH_PASSWORD_MECHANISM": "ssh_askpass", "ANSIBLE_BECOME_PASS": password}
+
+    def run(argv):
+        result = subprocess.run(argv, cwd=root, env=env, text=True, capture_output=True, timeout=60)
+        assert password not in result.stdout + result.stderr, "Fixture password appeared in output"
+        return result
+
+    login = run(["ansible", "fixture", *options, "-m", "command", "-a", "id -un"])
+    assert login.returncode == 0 and user in login.stdout, "Password fixture could not connect"
+    probe = run(["ansible-playbook", *options, "access.yml"])
+    assert probe.returncode == 4 and "Permission denied" in probe.stdout + probe.stderr, "Expected key-only rejection"
+
+
 def main():
     source = Path(__file__).resolve().parents[1]
     password = secrets.token_urlsafe(32)
@@ -43,7 +70,9 @@ def main():
         fixture = yaml.safe_load((source / "tests/fixtures/bootstrap-access.yml").read_text())
         # Exercise the actual bootstrap user/escalation expressions while the
         # fixture limits remote work to account tasks supported by containers.
-        fixture[0]["vars"] = yaml.safe_load((source / "bootstrap.yml").read_text())[0]["vars"]
+        bootstrap = yaml.safe_load((source / "bootstrap.yml").read_text())[0]
+        fixture[0]["vars"] = bootstrap["vars"]
+        fixture[0]["become"] = bootstrap["become"]
         (root / "bootstrap.yml").write_text(yaml.safe_dump(fixture, sort_keys=False))
         shutil.copy2(source / "access.yml", root / "site.yml")
         (root / "ansible.cfg").write_text(f"[defaults]\nroles_path = {source / 'roles'}\n")
@@ -198,6 +227,8 @@ def main():
             output = deploy(github=True)
             assert "Establishing development access" in output, output
             assert "Configuring the server through development-user SSH key access" in output, output
+
+            check_password_only_login(root, sudo_user, sudo_password, port, host_key)
 
             output = deploy(False, github=True, SUDO_PASSWORD="deliberately incorrect development password")
             assert "Incorrect sudo password" in output, output

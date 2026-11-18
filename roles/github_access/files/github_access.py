@@ -69,6 +69,13 @@ class GitHub:
         raise SyncError("GitHub pagination did not finish; synchronization stopped.")
 
 
+def require_token_owner(api, owner):
+    identity = api.request("/user")
+    login = identity.get("login") if isinstance(identity, dict) else None
+    if not isinstance(login, str) or login.lower() != owner.lower():
+        raise SyncError("The Doppler GitHub token must belong to the configured repository owner.")
+
+
 class Git:
     def __init__(self, home, ssh_options=None):
         self.home = home
@@ -124,6 +131,7 @@ class Git:
         self.ssh = [self.ssh[0], "-F", "/dev/null", "-i", str(self.key), *self.ssh[1:]]
         if self.authenticate(owner):
             return created
+        require_token_owner(api, owner)
         public = self.process(["/usr/bin/ssh-keygen", "-y", "-f", str(self.key)])
         if public.returncode or not public.stdout.startswith("ssh-ed25519 "):
             raise SyncError("Cannot read the managed SSH public key; the private key was not changed.")

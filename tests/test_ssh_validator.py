@@ -2,6 +2,7 @@
 
 import importlib.util
 from pathlib import Path
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -26,33 +27,56 @@ class CandidateTests(unittest.TestCase):
         self.candidate = self.root / "candidate"
         self.candidate.write_text("PermitRootLogin no\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n")
 
-    def expand(self):
-        return validator.expand_config(self.main, self.target, self.candidate.read_text(), self.root)
+    def stage(self):
+        staging = self.root / "staging"
+        staging.mkdir()
+        return validator.stage_config(self.main, self.target, self.candidate.read_text(), self.root, staging)
+
+    @staticmethod
+    def children(staged):
+        return [Path(shlex.split(line)[1]) for line in staged.read_text().splitlines() if line.startswith("Include ")]
 
     def test_new_dropin_participates_in_sorted_include(self):
-        (self.dropins / "50-provider.conf").write_text("PasswordAuthentication yes\n")
-        content, found = self.expand()
+        provider = self.dropins / "50-provider.conf"
+        provider.write_text("PasswordAuthentication yes\n")
+        staged, found = self.stage()
         self.assertTrue(found)
-        self.assertLess(content.index("PasswordAuthentication no"), content.index("PasswordAuthentication yes"))
+        self.assertEqual([child.read_text() for child in self.children(staged)],
+                         [self.candidate.read_text(), provider.read_text()])
         self.assertFalse(self.target.exists())
 
     def test_replacement_does_not_modify_live_file(self):
         self.target.write_text("PasswordAuthentication yes\n")
-        content, found = self.expand()
+        staged, found = self.stage()
         self.assertTrue(found)
-        self.assertNotIn("PasswordAuthentication yes", content)
+        self.assertEqual(self.children(staged)[0].read_text(), self.candidate.read_text())
         self.assertEqual(self.target.read_text(), "PasswordAuthentication yes\n")
 
     def test_recursive_include_is_rejected(self):
         (self.dropins / "recursive.conf").write_text("Include sshd_config\n")
         with self.assertRaisesRegex(ValueError, "Recursive"):
-            self.expand()
+            self.stage()
 
     def test_match_scope_and_nested_includes_are_preserved(self):
-        self.main.write_text("Match User other\nInclude sshd_config.d/*.conf\nMatch all\n")
-        content, _ = self.expand()
-        self.assertTrue(content.startswith("Match User other\nPermitRootLogin no\n"))
-        self.assertTrue(content.endswith("Match all\n"))
+        self.main.write_text("Match User other\nInclude nested\nMatch all\n")
+        (self.root / "nested").write_text("Include sshd_config.d/*.conf\n")
+        staged, found = self.stage()
+        self.assertTrue(found)
+        self.assertTrue(staged.read_text().startswith("Match User other\nInclude "))
+        self.assertTrue(staged.read_text().endswith("Match all\n"))
+        nested, = self.children(staged)
+        candidate, = self.children(nested)
+        self.assertEqual(candidate.read_text(), self.candidate.read_text())
+
+    def test_parent_glob_cannot_include_a_new_file_in_a_subdirectory(self):
+        self.main.write_text("Include *.conf\n")
+        with self.assertRaisesRegex(ValueError, "does not include"):
+            validator.validate(self.candidate, self.target, ["no"] * 3, self.main)
+
+    def test_wildcard_directory_can_include_a_new_dropin(self):
+        self.main.write_text("Include sshd_*.d/*.conf\n")
+        _, found = self.stage()
+        self.assertTrue(found)
 
     def test_missing_include_is_rejected(self):
         self.main.write_text("PasswordAuthentication yes\n")
