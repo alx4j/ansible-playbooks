@@ -1,18 +1,22 @@
 ---
-- name: Reject unmanaged checkouts and preserve local toolkit work
+- name: Publish a marked toolkit clone or verify the existing checkout
   ansible.builtin.command:
     argv:
       - /usr/bin/python3
       - -I
       - /usr/local/lib/agent-toolkit/install.py
-      - --check-checkout
+      - --prepare-checkout
       - --checkout
       - "{{ agent_toolkit_checkout }}"
       - --repository
       - "{{ agent_toolkit_repository }}"
-  changed_when: false
+      - --ssh-options
+      - "{{ (agent_toolkit_access.stdout | from_json).ssh_options | to_json }}"
+  register: agent_toolkit_checkout_result
+  changed_when: agent_toolkit_checkout_result.rc == 0 and (agent_toolkit_checkout_result.stdout | from_json).changed
 
 - name: Update the managed toolkit checkout from main
+  when: not agent_toolkit_checkout_result.changed
   ansible.builtin.git:
     repo: "{{ agent_toolkit_repository }}"
     dest: "{{ agent_toolkit_checkout }}"
@@ -25,12 +29,6 @@
     GIT_CONFIG_GLOBAL: /dev/null
     GIT_CONFIG_NOSYSTEM: "1"
     GIT_TERMINAL_PROMPT: "0"
-
-- name: Record ownership of the dedicated toolkit checkout
-  ansible.builtin.copy:
-    content: "{{ {'repository': agent_toolkit_repository} | to_json }}\n"
-    dest: "{{ agent_toolkit_checkout }}/.git/ansible-agent-toolkit.json"
-    mode: "0600"
 
 - name: Install changed plugin packages and link global instructions
   ansible.builtin.command:

@@ -170,27 +170,68 @@ class ToolkitTests(unittest.TestCase):
         self.assertFalse(target.is_symlink())
         self.assertEqual(target.read_text(), "Custom instructions\n")
 
+    def git(self, *args):
+        subprocess.run(["git", "-C", self.checkout, *args], check=True, capture_output=True)
+
+    def commit_fixture(self, message):
+        self.git("add", ".")
+        self.git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", message)
+
     def test_checkout_guard_rejects_unmanaged_modified_and_unpushed_work(self):
         with self.assertRaises(TOOLKIT.ToolkitError):
             TOOLKIT.check_checkout(self.checkout, "fixture", self.home)
-        def git(*args):
-            subprocess.run(["git", "-C", str(self.checkout), *args], check=True, capture_output=True)
-        git("init", "-q", "-b", "main")
-        git("add", ".")
-        git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "initial")
-        git("remote", "add", "origin", "fixture")
-        git("update-ref", "refs/remotes/origin/main", "HEAD")
+        self.git("init", "-q", "-b", "main")
+        self.commit_fixture("initial")
+        self.git("remote", "add", "origin", "fixture")
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
         (self.checkout / ".git/ansible-agent-toolkit.json").write_text(json.dumps({"repository": "fixture"}))
         TOOLKIT.check_checkout(self.checkout, "fixture", self.home)
         local = self.checkout / "local-work"
         local.write_text("Preserve me\n")
         with self.assertRaisesRegex(TOOLKIT.ToolkitError, "local changes"):
             TOOLKIT.check_checkout(self.checkout, "fixture", self.home)
-        git("add", ".")
-        git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "local")
+        self.commit_fixture("local")
         with self.assertRaisesRegex(TOOLKIT.ToolkitError, "local commits"):
             TOOLKIT.check_checkout(self.checkout, "fixture", self.home)
         self.assertEqual(local.read_text(), "Preserve me\n")
+
+    def test_initial_clone_is_retryable_and_preserves_a_competing_directory(self):
+        self.git("init", "-q", "-b", "main")
+        self.commit_fixture("initial")
+        destination = self.home / "managed"
+        repository = self.checkout.as_uri()
+
+        def prepare():
+            return TOOLKIT.prepare_checkout(destination, repository, self.home, [])
+
+        publish = TOOLKIT.publish_checkout
+
+        def interrupt(staged, target):
+            self.assertFalse(target.exists())
+            marker = staged / ".git/ansible-agent-toolkit.json"
+            self.assertEqual(json.loads(marker.read_text()), {"repository": repository})
+            self.assertEqual(marker.stat().st_mode & 0o777, 0o600)
+            raise InterruptedError
+
+        with patch.object(TOOLKIT, "publish_checkout", side_effect=interrupt), self.assertRaises(InterruptedError):
+            prepare()
+        self.assertFalse(destination.exists())
+
+        def competing_directory(staged, target):
+            target.mkdir()
+            publish(staged, target)
+
+        with patch.object(TOOLKIT, "publish_checkout", side_effect=competing_directory):
+            with self.assertRaisesRegex(TOOLKIT.ToolkitError, "not a regular Git checkout"):
+                prepare()
+        self.assertEqual(list(destination.iterdir()), [])
+        destination.rmdir()
+
+        self.assertTrue(prepare())
+        self.assertFalse(prepare())
+        (destination / ".git/ansible-agent-toolkit.json").unlink()
+        with self.assertRaisesRegex(TOOLKIT.ToolkitError, "not owned"):
+            prepare()
 
 
 if __name__ == "__main__":

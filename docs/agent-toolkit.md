@@ -45,6 +45,6 @@ The `common` plugin supplies the Doppler skill. Ansible supplies the local crede
 
 After all selected plugins install successfully, Ansible backs up an existing `AGENTS.md` and the old standalone `~/.codex/skills/doppler-secrets` under `~/.local/share/agent-toolkit-backups/`. The run reports the backup paths. Then it links the toolkit instructions. An existing nonempty `AGENTS.override.md` still takes precedence and produces a warning.
 
-If the managed checkout has local edits, unpushed commits, a different branch, or no ownership marker, inspect it before rerunning. Move work you want to keep into the editable checkout. A marketplace registered to another source also needs to be resolved before installation proceeds.
+If the first clone is interrupted, rerun **Bootstrap VPS**. The checkout appears at its final path only after it has its ownership marker. If an existing checkout has local edits, unpushed commits, a different branch, or no ownership marker, inspect it before rerunning. Move work you want to keep into the editable checkout. A marketplace registered to another source also needs to be resolved before installation proceeds.
 
 Removing a plugin from inventory stops managing it. Disabling the role leaves installed packages and links in place. To supply independent instructions, set `agent_toolkit_manage_instructions: false` before setting `dev_host_codex_instructions_source`. Removing a project topic affects only the editable clone. Check mode skips cloning and installation.

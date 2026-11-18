@@ -22,6 +22,22 @@ def run_creds(arguments, data=None):
     return result.stdout
 
 
+def service_uses(token):
+    service = "doppler-secrets.service"
+    result = subprocess.run(["/usr/bin/systemctl", "show", service, "--property=MainPID", "--value"],
+                            capture_output=True, text=True, check=True, timeout=30)
+    pid = int(result.stdout)
+    if not pid:
+        return False
+    runtime = Path(f"/proc/{pid}/root/run/credentials/{service}/doppler_token")
+    try:
+        with runtime.open("rb") as stream:
+            return hmac.compare_digest(stream.read(8193), token)
+    except FileNotFoundError:
+        # The service may have exited since systemd reported its PID.
+        return False
+
+
 def store(token):
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     if os.geteuid() != 0 or not token or len(token) > 8192 or any(chr(byte).isspace() for byte in token) or b"\0" in token:
@@ -35,7 +51,7 @@ def store(token):
             raise ValueError("Unsafe encrypted credential")
         current = run_creds(["decrypt", "--name=doppler_token", str(DESTINATION), "-"])
         if hmac.compare_digest(current, token):
-            return False
+            return "unchanged" if service_uses(token) else "restart"
     with tempfile.TemporaryDirectory(prefix=".doppler-", dir=DIRECTORY) as staging:
         candidate = Path(staging) / "doppler_token"
         run_creds(["encrypt", "--with-key=host", "--name=doppler_token", "-", str(candidate)], token)
@@ -48,12 +64,11 @@ def store(token):
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
-    return True
+    return "changed"
 
 
 if __name__ == "__main__":
     try:
-        changed = store(sys.stdin.buffer.read(8193))
-        print("changed" if changed else "unchanged")
+        print(store(sys.stdin.buffer.read(8193)))
     except Exception:
-        sys.exit("Could not store the encrypted credential; check systemd-creds, root permissions, and the existing host key.")
+        sys.exit("Could not reconcile the credential; check systemd, root permissions, and the existing host key.")

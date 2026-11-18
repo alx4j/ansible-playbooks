@@ -106,7 +106,7 @@
   vars:
     doppler_secrets_restart_required: >-
       {{ doppler_secrets_broker.changed or doppler_secrets_service_unit.changed
-         or doppler_secrets_socket_unit.changed or doppler_secrets_credential.stdout | default('') == 'changed' }}
+         or doppler_secrets_socket_unit.changed or doppler_secrets_credential.stdout | default('') in ['changed', 'restart'] }}
   block:
     # systemd also counts planned maintenance toward the start limit.
     - name: Allow a fresh start after changing code or credentials

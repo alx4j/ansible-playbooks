@@ -2,14 +2,17 @@
 """Reconcile packaged Codex plugins without modifying a development checkout."""
 
 import argparse
+import ctypes
 import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
+import tempfile
 import uuid
 
 
@@ -20,11 +23,11 @@ class ToolkitError(Exception):
     pass
 
 
-def run(arguments, home):
+def run(arguments, home, *, extra_env=None, timeout=120):
     environment = {"HOME": str(home), "CODEX_HOME": str(home / ".codex"),
                    "PATH": f"{home}/.local/bin:/usr/bin:/bin", "LC_ALL": "C.UTF-8"}
-    result = subprocess.run(list(map(str, arguments)), env=environment, cwd=home,
-                            text=True, capture_output=True, timeout=120)
+    result = subprocess.run(list(map(str, arguments)), env=environment | (extra_env or {}), cwd=home,
+                            text=True, capture_output=True, timeout=timeout)
     if result.returncode:
         raise ToolkitError("Command failed: " + " ".join(map(str, arguments[:3]))
                            + ". Inspect the managed checkout or Codex configuration.")
@@ -34,8 +37,6 @@ def run(arguments, home):
 def check_checkout(checkout, repository, home):
     if checkout.is_symlink():
         raise ToolkitError("The managed toolkit checkout must not be a symlink.")
-    if not checkout.exists():
-        return
     marker = checkout / ".git/ansible-agent-toolkit.json"
     if not checkout.is_dir() or not (checkout / ".git").is_dir() or (checkout / ".git").is_symlink():
         raise ToolkitError("The managed toolkit path is not a regular Git checkout.")
@@ -49,6 +50,36 @@ def check_checkout(checkout, repository, home):
         raise ToolkitError("The managed toolkit has local changes or another branch; move development work to PROJECTS_DIR.")
     if git("rev-list", "--count", "origin/main..HEAD") != "0":
         raise ToolkitError("The managed toolkit has local commits; they were preserved.")
+
+
+def publish_checkout(staged, checkout):
+    # RENAME_NOREPLACE also protects an empty directory created during the clone.
+    rename = ctypes.CDLL(None, use_errno=True).renameat2
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    if rename(-100, os.fsencode(staged), -100, os.fsencode(checkout), 1):
+        raise OSError(ctypes.get_errno(), "Could not publish the managed checkout.")
+
+
+def prepare_checkout(checkout, repository, home, ssh_options):
+    if checkout.exists() or checkout.is_symlink():
+        check_checkout(checkout, repository, home)
+        return False
+    with tempfile.TemporaryDirectory(prefix=".agent-toolkit-", dir=checkout.parent) as temporary:
+        staged = Path(temporary) / "checkout"
+        git_env = {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "GIT_TERMINAL_PROMPT": "0",
+                   "GIT_SSH_COMMAND": shlex.join(["/usr/bin/ssh", *ssh_options])}
+        run(["/usr/bin/git", "clone", "--branch", "main", "--no-recurse-submodules", "--", repository, staged],
+            home, timeout=600, extra_env=git_env)
+        marker = staged / ".git/ansible-agent-toolkit.json"
+        with os.fdopen(os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600), "w") as stream:
+            json.dump({"repository": repository}, stream)
+            stream.write("\n")
+        try:
+            publish_checkout(staged, checkout)
+        except FileExistsError:
+            check_checkout(checkout, repository, home)
+            return False
+    return True
 
 
 def fingerprint(directory):
@@ -167,16 +198,16 @@ class Installer:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkout", type=Path, required=True)
-    parser.add_argument("--check-checkout", action="store_true")
+    parser.add_argument("--prepare-checkout", action="store_true")
     parser.add_argument("--repository")
+    parser.add_argument("--ssh-options", default="[]")
     parser.add_argument("--plugins", default='["common", "game-development", "infrastructure", "productivity"]')
     parser.add_argument("--manage-instructions", choices=("yes", "no"), default="yes")
     args = parser.parse_args()
     if os.getuid() == 0:
         raise ToolkitError("Run as the development account, never root.")
-    if args.check_checkout:
-        check_checkout(args.checkout, args.repository, Path.home())
-        return {"changed": False}
+    if args.prepare_checkout:
+        return {"changed": prepare_checkout(args.checkout, args.repository, Path.home(), json.loads(args.ssh_options))}
     return Installer(args.checkout, Path.home(), json.loads(args.plugins), args.manage_instructions == "yes").run()
 
 
