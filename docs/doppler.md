@@ -8,6 +8,8 @@ Let a program on the VPS use a GitHub, Notion, or other application credential w
 2. Create a read-only Doppler Service Token for the config and save it as the `DOPPLER_TOKEN` secret in GitHub's `development` environment.
 3. Run **Bootstrap VPS** for the host. The role encrypts the token on the VPS, starts the service, and verifies the local connection. It needs neither a Doppler CLI login nor a TPM. Omitting the token or setting `doppler_secrets_enabled: false` leaves an existing service in place.
 
+On a fresh VPS, the default toolkit and project sync both need Doppler. To set up the host without either integration, set `agent_toolkit_enabled: false` and `work_repositories_enabled: false` in the inventory. On later runs you can omit the token when the existing service answers the development user's offline check.
+
 ## 2. Check the connection
 
 Run these from the development user's SSH, Herdr, or tmux shell. Use a secret name your task needs. The example assumes `GITHUB_TOKEN` is configured.
@@ -42,7 +44,7 @@ Automation uses the stable client path above. Codex uses the wrapper bundled wit
 
 ## Restart and rotation
 
-1. To rotate the **service token**, put the replacement in GitHub's `development` environment and rerun **Bootstrap VPS** for each affected host. A changed token replaces the encrypted file atomically and restarts the service. An unchanged token preserves both ciphertext and service start time.
+1. To rotate the **service token**, put the replacement in GitHub's `development` environment and rerun **Bootstrap VPS** for each affected host. If deployment stops after saving the replacement, rerun with the same token. Ansible restarts the service if it still has the old credential. Once the saved and running credentials match, another run preserves the ciphertext and service start time.
 2. Check an intended secret from each host, then revoke the old token in Doppler. The playbook does not create or revoke Doppler tokens.
 3. To change an **application credential**, update it in Doppler. The next wrapper invocation gets the new value. A running program keeps its existing environment.
 

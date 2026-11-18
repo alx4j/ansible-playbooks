@@ -9,6 +9,12 @@
   ansible.builtin.import_tasks: finish_bootstrap_password.yml
   when: dev_host_finish_bootstrap_password | default(false) | bool
 
+- name: Check Doppler prerequisites before configuring the host
+  ansible.builtin.import_role:
+    name: doppler_secrets
+    tasks_from: preflight
+  tags: [doppler_preflight]
+
 - name: Install the combined system package set
   ansible.builtin.apt:
     name: "{{ dev_host_base_packages }}"

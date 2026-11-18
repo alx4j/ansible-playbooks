@@ -11,8 +11,8 @@ assert os.geteuid() == 0, "Run these VM checks with sudo"
 account = pwd.getpwnam("ansibletest")
 service_account = pwd.getpwnam("doppler-secrets")
 assert service_account.pw_uid != 0 and service_account.pw_shell == "/usr/sbin/nologin"
-assert sys.argv[1:] in ([], ["--rotated"])
-expected = b"ansible-fixture-two" if sys.argv[1:] else b"ansible-fixture-one"
+assert sys.argv[1:] in ([], ["--rotated"], ["--interrupt-rotation"])
+expected = b"ansible-fixture-two" if "--rotated" in sys.argv else b"ansible-fixture-one"
 
 
 def command(*arguments):
@@ -38,6 +38,13 @@ assert expected not in Path(f"/proc/{pid}/cmdline").read_bytes()
 assert expected not in Path(f"/proc/{pid}/environ").read_bytes()
 runtime = Path(f"/proc/{pid}/root/run/credentials/doppler-secrets.service/doppler_token")
 assert runtime.read_bytes() == expected, "The running service did not load the current credential"
+
+if "--interrupt-rotation" in sys.argv:
+    # Leave the exact state of a canceled play: new ciphertext, old running service.
+    result = subprocess.run(["/usr/bin/python3", "-I", "/usr/local/lib/doppler-secrets/store-credential.py"],
+                            input=b"ansible-fixture-two", capture_output=True)
+    assert result.returncode == 0 and result.stdout.strip() == b"changed", "Could not stage the fixture rotation"
+    assert runtime.read_bytes() == expected, "The service restarted before the recovery run"
 
 socket = Path("/run/doppler-secrets.sock")
 assert socket.is_socket() and socket.stat().st_uid == 0

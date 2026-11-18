@@ -64,9 +64,18 @@ run_tool_test() {
 }
 run_tool_test tests/projects.py -v
 run_tool_test tests/prepare-tools.py
+if env -u DOPPLER_TOKEN ansible-playbook -i "$vm_dir/inventory.json" site.yml -e agent_toolkit_enabled=true \
+    > "$vm_dir/missing-doppler.log"; then
+  echo 'Fresh host accepted a GitHub integration without Doppler' >&2
+  exit 1
+fi
+grep -Fq 'The GitHub integrations need a working Doppler service' "$vm_dir/missing-doppler.log"
+grep -Eq 'vm +:.*changed=0 +unreachable=0 +failed=1' "$vm_dir/missing-doppler.log"
 # Synthetic credential only: PR jobs never receive deployment secrets.
 export DOPPLER_TOKEN=ansible-fixture-one
 ansible-playbook -i "$vm_dir/inventory.json" site.yml
+env -u DOPPLER_TOKEN ansible-playbook -i "$vm_dir/inventory.json" site.yml \
+  -e work_repositories_enabled=true --tags doppler_preflight
 # The workspace fixture only needs the first install and cleans up its own session.
 sudo env "PATH=$PATH" python3 tests/project-workspaces.py
 run_tool_test tests/tokeneconomizer.py
@@ -119,7 +128,7 @@ fi
 
 # Restart without the controller token, then rotate it through the production role.
 env -u DOPPLER_TOKEN sudo systemctl restart doppler-secrets.service
-sudo env "PATH=$PATH" python3 tests/doppler-runtime.py
+sudo env "PATH=$PATH" python3 tests/doppler-runtime.py --interrupt-rotation
 export DOPPLER_TOKEN=ansible-fixture-two
 if ! ansible-playbook -i "$vm_dir/inventory.json" tests/doppler.yml; then
   sudo systemctl show doppler-secrets.service -p Result -p NRestarts -p StartLimitBurst
