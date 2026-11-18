@@ -28,5 +28,19 @@ with tempfile.TemporaryDirectory() as directory:
         assert "Effective passwordauthentication" in str(error)
     else:
         raise AssertionError("Earlier conflicting SSH policy was accepted")
+    # The included Match must end when sshd returns to its parent file.
+    nested = root / "nested"
+    nested.write_text("Match User fixture\n    X11Forwarding no\n")
+    main = root / "sshd_config"
+    main.write_text(f"Include {target}\nInclude {nested}\nUsePAM yes\n")
+    validator.validate(candidate, target, ["no"] * 3, config=main)
+    validator.check_policy(["no"] * 3, main, "/usr/sbin/sshd")
+    main.write_text(f"PasswordAuthentication yes\nInclude {target}\n")
+    try:
+        validator.check_policy(["no"] * 3, main, "/usr/sbin/sshd")
+    except ValueError as error:
+        assert "Effective passwordauthentication" in str(error)
+    else:
+        raise AssertionError("Installed effective policy drift was accepted")
 assert target.read_bytes() == before
 print("PASS: invalid syntax and earlier policy conflicts rejected; installed configuration preserved")

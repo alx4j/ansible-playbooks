@@ -3,9 +3,9 @@
   hosts: development
   gather_facts: true
   serial: 1
+  become: "{{ (dev_host_bootstrap_user | default('root')) != 'root' }}"
   vars:
     ansible_user: "{{ dev_host_bootstrap_user | default('root') }}"
-    ansible_become: "{{ (dev_host_bootstrap_user | default('root')) != 'root' }}"
   tasks:
     - name: Bootstrap the account and sudo access
       ansible.builtin.import_role:

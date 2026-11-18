@@ -104,6 +104,14 @@ def main():
         playbook = root / "setup.yml"
         playbook.write_text(yaml.safe_dump(play, sort_keys=False))
         environment = {**os.environ, "ANSIBLE_ROLES_PATH": str(SOURCE / "roles")}
+        # A private directory owned by another account needs an explicit repair.
+        ssh_directory = Path("/home/worktest/.ssh")
+        ssh_directory.mkdir(mode=0o700)
+        refused = subprocess.run(["ansible-playbook", "-i", "localhost,", str(playbook)],
+                                 env=environment, capture_output=True, text=True)
+        assert refused.returncode != 0 and "private SSH directory" in refused.stdout
+        assert ssh_directory.stat().st_uid == 0
+        ssh_directory.rmdir()
         for iteration in range(2):
             result = subprocess.run(["ansible-playbook", "-i", "localhost,", str(playbook)],
                                     env=environment, text=True, capture_output=True, timeout=120)

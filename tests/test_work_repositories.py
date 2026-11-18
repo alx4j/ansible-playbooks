@@ -374,8 +374,9 @@ class WorkRepositoriesTests(unittest.TestCase):
                 patch.object(git, "ensure_key", return_value=False), \
                 patch.object(git, "process", return_value=public), \
                 patch.object(self.api, "pages", return_value=iter([])), \
-                patch.object(self.api, "request", return_value={}) as request:
+                patch.object(self.api, "request", side_effect=[{"login": "Fixture"}, {}]) as request:
             self.assertTrue(git.enroll(self.api, "fixture"))
+            self.assertEqual(request.call_args_list[0].args, ("/user",))
             self.assertEqual(request.call_args.args[0], "/user/keys")
             self.assertEqual(request.call_args.args[1]["key"], "ssh-ed25519 AAAAfixture")
         with patch.object(git, "authenticate", return_value=True), \
@@ -383,6 +384,16 @@ class WorkRepositoriesTests(unittest.TestCase):
                 patch.object(self.api, "request", side_effect=AssertionError("Unexpected API key access")), \
                 patch.object(self.api, "pages", side_effect=AssertionError("Unexpected key listing")):
             self.assertFalse(git.enroll(self.api, "fixture"))
+
+    def test_enrollment_checks_owner_before_accessing_account_keys(self):
+        git = SYNC.Git(self.home)
+        api = Mock()
+        api.request.return_value = {"login": "other-owner"}
+        with patch.object(git, "authenticate", return_value=False), patch.object(git, "ensure_key"):
+            with self.assertRaisesRegex(SYNC.SyncError, "configured repository owner"):
+                git.enroll(api, "fixture")
+        api.request.assert_called_once_with("/user")
+        api.pages.assert_not_called()
 
     def test_key_permission_failure_is_actionable_and_does_not_change_projects(self):
         git = SYNC.Git(self.home)

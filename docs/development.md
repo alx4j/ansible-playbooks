@@ -36,7 +36,7 @@ The examples select the inventory alias `dev01`. Substitute yours throughout. Ke
    .venv/bin/ansible-playbook -i inventories/local/hosts.yml site.yml --limit dev01 --check --ask-become-pass
    ```
 
-3. **Configure the host.** This play connects as the development user and verifies sudo before applying host settings. Omit `--ask-become-pass` if the account already has passwordless sudo.
+3. **Configure the host.** With the default key-only policy, this play requires a working development-user SSH key and verifies sudo before applying host settings. Use an SSH agent or pass `--private-key` to select your key. Omit `--ask-become-pass` if the account already has passwordless sudo.
 
    ```bash
    .venv/bin/ansible-playbook -i inventories/local/hosts.yml site.yml --limit dev01 --ask-become-pass

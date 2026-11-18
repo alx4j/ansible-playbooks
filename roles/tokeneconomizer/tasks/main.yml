@@ -28,9 +28,12 @@
     mode: "0644"
 
 - name: Create the user's TokenEconomizer and Codex parent directories
+  become: true
+  become_user: "{{ tokeneconomizer_user }}"
   ansible.builtin.file:
     path: "{{ tokeneconomizer_home }}/{{ tokeneconomizer_directory }}"
     state: directory
+    follow: false
     owner: "{{ tokeneconomizer_user }}"
     group: "{{ tokeneconomizer_user }}"
     mode: "0700"

@@ -64,7 +64,7 @@ Both Codex source paths default to empty. For custom files, use absolute paths i
 
 | On each run | What that means on the VPS |
 | --- | --- |
-| Access | Ansible checks key login and sudo before restricting SSH. It preserves unrelated authorized keys and groups. It validates SSH syntax and effective global settings, reloads, and tests a fresh connection. Defaults disable root, password, and keyboard-interactive SSH login. Review any client-specific `Match` rules on an existing host. |
+| Access | Before disabling SSH password login, Ansible opens a fresh public-key connection as the development user and checks sudo. It preserves unrelated authorized keys and groups. Each apply checks the installed global settings with `sshd -T`. A changed policy also triggers a reload and a fresh login check. Defaults disable root, password, and keyboard-interactive SSH login. Review any client-specific `Match` rules on an existing host. |
 | Updates and firewall | Daily APT timers apply the distribution's configured unattended upgrades. Automatic reboots default to off. Ansible adds Mosh's UDP rule (`60000:61000`). Enabling UFW is a separate choice. |
 | Shell and services | The role clears the static `/etc/motd` banner, loads the development environment in Bash, enables user lingering, and starts `moshi-hook.service`. |
 | Files to review on an existing host | Ansible owns the SSH drop-in `00-hardening.conf`, APT files `20auto-upgrades` and `52ansible-unattended-upgrades`, the Moshi user unit, and the optional `90-<user>-ansible` sudoers file. |

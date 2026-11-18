@@ -39,7 +39,18 @@
     update_password: on_create
   no_log: true
 
+- name: Prepare the development account's private SSH directory
+  become: true
+  become_user: "{{ dev_host_user }}"
+  ansible.builtin.file:
+    path: "{{ dev_host_home }}/.ssh"
+    state: directory
+    follow: false
+    mode: "0700"
+
 - name: Install approved SSH keys without removing existing access
+  become: true
+  become_user: "{{ dev_host_user }}"
   ansible.posix.authorized_key:
     user: "{{ dev_host_user }}"
     key: "{{ dev_host_authorized_keys | join('\n') }}"

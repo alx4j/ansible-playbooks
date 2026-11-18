@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import process_activity as activity
 
 sys.path.insert(0, "/usr/local/lib/github-access")
-from github_access import ApiError, GitHub, Git as AccessGit, SyncError
+from github_access import ApiError, GitHub, Git as AccessGit, SyncError, require_token_owner
 
 
 def repo_info(value):
@@ -41,8 +41,7 @@ def repo_info(value):
 
 
 def discover(api, owner, topic):
-    if api.request("/user").get("login", "").lower() != owner.lower():
-        raise SyncError("The Doppler GitHub token must belong to the configured repository owner.")
+    require_token_owner(api, owner)
     desired, seen = {}, set()
     for raw in api.pages("/user/repos?affiliation=owner&sort=full_name"):
         repo = repo_info(raw)

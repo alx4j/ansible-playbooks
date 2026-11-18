@@ -30,9 +30,12 @@
     mode: "0644"
 
 - name: Create the user's toolkit and Codex parent directories
+  become: true
+  become_user: "{{ agent_toolkit_user }}"
   ansible.builtin.file:
     path: "{{ agent_toolkit_home }}/{{ agent_toolkit_parent }}"
     state: directory
+    follow: false
     owner: "{{ agent_toolkit_user }}"
     group: "{{ agent_toolkit_user }}"
     mode: "0700"
