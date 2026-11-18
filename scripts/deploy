@@ -56,7 +56,12 @@ export ANSIBLE_SSH_CONTROL_PATH_DIR="$deployment_dir/control"
 ssh_options="-o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
 ssh_options+=" -o UserKnownHostsFile=\"$deployment_dir/known_hosts\""
 ssh_options+=" -o GlobalKnownHostsFile=/dev/null -o KbdInteractiveAuthentication=no"
+# Only this adapter knows which authentication method the connection will use.
+# Override any inventory values for the handoff switches at every stage.
+record_password=false
+finish_password=false
 if [[ -n "${DEPLOY_BOOTSTRAP_PASSWORD:-}" ]]; then
+  record_password=true
   printf '%s' "$DEPLOY_BOOTSTRAP_PASSWORD" > "$deployment_dir/password"
   authentication=(--connection-password-file "$deployment_dir/password")
   export ANSIBLE_SSH_PASSWORD_MECHANISM=ssh_askpass
@@ -66,12 +71,16 @@ else
   ssh-keygen -y -P '' -f "$deployment_dir/id" > /dev/null 2>&1 \
     || fail 'The deployment SSH key is invalid or encrypted; provide a dedicated automation key.'
   authentication=(--private-key "$deployment_dir/id")
+  if [[ "$DEPLOY_PLAYBOOK" == site ]]; then
+    finish_password=true
+  fi
   ssh_options+=" -o BatchMode=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no"
 fi
 unset DEPLOY_BOOTSTRAP_PASSWORD DEPLOY_SSH_PRIVATE_KEY
 
 command=(ansible-playbook -i "$deployment_dir/inventory.yml" "$DEPLOY_PLAYBOOK.yml"
-  --limit "$DEPLOY_HOST" "${authentication[@]}" --ssh-common-args "$ssh_options")
+  --limit "$DEPLOY_HOST" "${authentication[@]}" --ssh-common-args "$ssh_options"
+  --extra-vars "{\"dev_host_record_bootstrap_password\":$record_password,\"dev_host_finish_bootstrap_password\":$finish_password}")
 
 # Keep preflight failures distinct from access failures in automatic runs.
 "${command[@]}" --syntax-check || fail 'Playbook syntax validation failed.'

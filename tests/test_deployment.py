@@ -103,6 +103,24 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("StrictHostKeyChecking=yes", options)
         self.assertNotIn("--diff", calls[-1]["args"])
 
+    def test_password_handoff_flags_follow_the_actual_authentication_stage(self):
+        for stage, use_password, record, finish in (
+            ("bootstrap", True, True, False),
+            ("bootstrap", False, False, False),
+            ("access", True, False, False),
+            ("site", True, False, True),
+        ):
+            with self.subTest(stage=stage, use_password=use_password):
+                result, calls = self.run_deployment(
+                    DEPLOY_PLAYBOOK=stage,
+                    DEPLOY_BOOTSTRAP_PASSWORD="test bootstrap password placeholder" if use_password else "",
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                args = calls[-1]["args"]
+                flags = json.loads(args[args.index("--extra-vars") + 1])
+                self.assertEqual(flags, {"dev_host_record_bootstrap_password": record,
+                                         "dev_host_finish_bootstrap_password": finish})
+
     def test_bootstrap_receives_the_account_hash(self):
         result, calls = self.run_deployment(DEPLOY_PLAYBOOK="bootstrap")
         self.assertEqual(result.returncode, 0, result.stderr)

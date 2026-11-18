@@ -42,17 +42,19 @@ For example, replace the empty `hosts` entry with this block to set up the devel
 
 Choose `my-vps` as the workflow target to apply those settings. If you want project sync, set `work_repositories_enabled: true`, add `work_repositories_owner` under that host, and configure the Doppler and GitHub credentials described above.
 
-These account settings are shared across inventory servers. Existing account passwords are preserved. Changing `SUDO_PASSWORD` in GitHub alone cannot rotate the server password. Host variables can override the port and project settings. An unlisted manual target uses shared defaults, so list it first if you need your integration choices to apply.
+These account settings are shared across inventory servers. The development account keeps its existing sudo password. Changing `SUDO_PASSWORD` in GitHub alone cannot rotate the server password. Host variables can override the port and project settings. An unlisted manual target uses shared defaults, so list it first if you need your integration choices to apply.
 
 ## 2. Establish access
 
 1. Open **Actions → Bootstrap VPS → Run workflow** and select `main`.
 2. Set `server_address` to one hostname, IP address, or inventory alias. For a fresh VPS, set `bootstrap_user` to the initial administrator supplied by your provider. The default is `root`.
-3. Prefer key-based bootstrap when available. Leave `bootstrap_password` blank if the initial account accepts the deployment key and can run sudo without a prompt. Otherwise, this input supplies the initial account's SSH password and, for a non-root user, its sudo password. **GitHub retains this ordinary form input in the workflow event data.** The first step masks it in logs. Use the [local procedure](development.md#bootstrap-and-apply) for interactive password entry or separate SSH and sudo passwords. The workflow rejects surrounding whitespace.
-4. Run the workflow and read the job summary. It first tests the development account. If access is missing, it uses the initial administrator to create the account and install the deployment public key. It then reconnects as the development user, verifies sudo, and configures the host. An existing account with a failing sudo check needs its credentials corrected.
-5. SSH in with a key authorized for the development account. Complete the [first-login checklist](first-login.md), including [ClickUp authorization](first-login.md#authorize-clickup-mcp). To rerun a configured server later, enter just its address.
+3. Leave `bootstrap_password` blank for key-based setup. For password-based setup, enter a temporary password for the initial administrator. Use a different account and password for `SUDO_USER` and `SUDO_PASSWORD`. **GitHub retains the form input in the workflow event data.** Use [local bootstrap](development.md#bootstrap-and-apply) to enter credentials outside GitHub or when the initial SSH and sudo passwords differ.
+4. Run the workflow. If it needs the initial password, it records the authenticated account on the VPS and creates development access. It then opens a fresh SSH connection with the deployment key, verifies the development user can sudo, and locks the initial account's **local Linux password** before installing the rest of the tools.
+5. SSH in with a key authorized for the development account and complete the [first-login checklist](first-login.md). Bootstrap verifies the runner’s key. Check your workstation key separately and keep provider rescue access available.
 
-`bootstrap_password` and `SUDO_PASSWORD` belong to different accounts. Disabling password-based SSH still leaves an initial password usable for other purposes such as console login. Keep provider-console access available while changing SSH or sudo.
+The locked password can no longer authenticate the initial account at an ordinary Linux console or for password-based sudo. The development user keeps their own sudo password. Your provider controls any separate rescue login.
+
+If setup stops before the key and sudo checks succeed, the initial password can still work. Rerun **Bootstrap VPS**. Once development access works, enter just the server address. A verified run resumes any recorded lock. If setup stopped before recording the account, or if you entered a valid password on an already configured host and the workflow reported it unused, rotate that password yourself. When restoring password access to a locked initial account, set a **new** password because the old value is still in the event.
 
 ## 3. Apply later changes
 

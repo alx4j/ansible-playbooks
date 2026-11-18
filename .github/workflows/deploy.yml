@@ -17,7 +17,7 @@ on:
         type: string
         required: false
       bootstrap_password:
-        description: Bootstrap password (SSH and sudo)
+        description: Temporary initial account password (retained in event data, locked on the VPS after key handoff)
         type: string
         required: false
 

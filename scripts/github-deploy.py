@@ -149,6 +149,11 @@ def prepare_environment(event, environment):
     sudo_password = env.pop("SUDO_PASSWORD", "")
     if not sudo_password:
         raise ValueError("Set the SUDO_PASSWORD environment secret for development-user sudo.")
+    initial_password = inputs.get("bootstrap_password")
+    if initial_password and bootstrap_user == sudo_user:
+        raise ValueError("Password bootstrap requires separate initial and development accounts. Use key access for a shared account.")
+    if initial_password == sudo_password:
+        raise ValueError("The bootstrap password was also supplied as SUDO_PASSWORD. Rotate the exposed password before retrying.")
     if not env.get("DEPLOY_SSH_PRIVATE_KEY"):
         raise ValueError("Set ANSIBLE_SSH_PRIVATE_KEY for the development user's deployment key.")
     if not env.get("DEPLOY_KNOWN_HOSTS"):
@@ -210,6 +215,10 @@ def configure_server(env, initial_password):
         bootstrap = run_playbook(bootstrap_env, "bootstrap")
         if bootstrap.returncode:
             return bootstrap.returncode
+
+    elif initial_password:
+        print("The initial password was unused because development access already works. "
+              "If the form contained a valid password, rotate it on the server.", flush=True)
 
     # The site play reopens and verifies dev access before making host changes.
     print("Configuring the server through development-user SSH key access.", flush=True)

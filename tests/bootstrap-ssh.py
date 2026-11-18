@@ -23,10 +23,12 @@ def main():
     password = secrets.token_urlsafe(32)
     initial_password = secrets.token_urlsafe(32)
     sudo_password = secrets.token_urlsafe(32)
+    second_password = secrets.token_urlsafe(32)
     sudo_user = "configuredadmin"
-    subprocess.run(["useradd", "-m", "-s", "/bin/bash", "-G", "sudo", "initialadmin"], check=True)
+    for admin in ("initialadmin", "secondadmin"):
+        subprocess.run(["useradd", "-m", "-s", "/bin/bash", "-G", "sudo", admin], check=True)
     subprocess.run(
-        ["chpasswd"], input=f"root:{password}\ninitialadmin:{initial_password}\n",
+        ["chpasswd"], input=f"root:{password}\ninitialadmin:{initial_password}\nsecondadmin:{second_password}\n",
         text=True, check=True, capture_output=True,
     )
     sudo_policy = Path("/etc/sudoers.d/initialadmin-test")
@@ -45,7 +47,13 @@ def main():
         # fixture limits remote work to account tasks supported by containers.
         fixture[0]["vars"] = yaml.safe_load((source / "bootstrap.yml").read_text())[0]["vars"]
         (root / "bootstrap.yml").write_text(yaml.safe_dump(fixture, sort_keys=False))
-        shutil.copy2(source / "access.yml", root / "site.yml")
+        site = yaml.safe_load((source / "access.yml").read_text())
+        site[0]["tasks"].append({
+            "name": "Retire the bootstrap password after verified replacement access",
+            "ansible.builtin.import_role": {"name": "dev_host", "tasks_from": "finish_bootstrap_password"},
+            "when": "dev_host_finish_bootstrap_password | default(false) | bool",
+        })
+        (root / "site.yml").write_text(yaml.safe_dump(site, sort_keys=False))
         (root / "ansible.cfg").write_text(f"[defaults]\nroles_path = {source / 'roles'}\n")
         runtime = root / "runtime"
         runtime.mkdir()
@@ -107,7 +115,7 @@ def main():
                     text=True, capture_output=True, timeout=120,
                 )
                 output = result.stdout + result.stderr
-                assert all(value not in output for value in [password, initial_password, sudo_password, private_key]), "Credential appeared in output"
+                assert all(value not in output for value in [password, initial_password, second_password, sudo_password, private_key]), "Credential appeared in output"
                 assert not list(runtime.iterdir()), "Temporary credentials were not removed"
                 if expect_success:
                     assert result.returncode == 0, output
@@ -115,32 +123,52 @@ def main():
                     assert result.returncode != 0, "Invalid SSH credentials unexpectedly succeeded"
                 return output
 
+            def password_status(user):
+                status = subprocess.check_output(["passwd", "--status", "--", user], text=True)
+                return status.split()[1]
+
             wrong_host_key = Path("/tmp/unrelated-key.pub").read_text().strip()
             output = deploy(False, DEPLOY_KNOWN_HOSTS=f"[127.0.0.1]:{port} {wrong_host_key}")
             assert "Please add this host's fingerprint to your known_hosts file" in output, output
             output = deploy(False, DEPLOY_BOOTSTRAP_PASSWORD="deliberately incorrect test password")
             assert "Permission denied" in output, output
             deploy()
+            assert password_status("root") == "P"
+            deploy(False, DEPLOY_PLAYBOOK="site", DEPLOY_SSH_PRIVATE_KEY=Path("/tmp/unrelated-key").read_text())
+            assert password_status("root") == "P", "A failed key login retired the initial password"
             # Keep the initial password in the caller's environment to ensure
             # the production runner excludes it from routine key-based access.
             deploy(DEPLOY_PLAYBOOK="site", DEPLOY_SSH_PRIVATE_KEY=private_key)
 
+            assert password_status("root") == "L", "Root's console password survived the verified handoff"
+            assert password_status("initialadmin") == "P"
             host = inventory["all"]["children"]["development"]["hosts"]["dev01"]
             # Keep coverage for inventories using the original connection and role variables.
             host.pop("sudo_user")
             host.update({
-                "dev_host_bootstrap_user": "initialadmin",
+                "dev_host_bootstrap_user": "initialadmin", "dev_host_passwordless_sudo": False,
                 "ansible_user": "bootstrapviaadmin", "dev_host_user": "bootstrapviaadmin",
             })
+            dev_hash = subprocess.check_output(
+                ["openssl", "passwd", "-6", "-stdin"], input=sudo_password + "\n", text=True,
+            ).strip()
             env.update({
+                "SUDO_PASSWORD_HASH": dev_hash,
                 "DEPLOY_INVENTORY": json.dumps(inventory),
                 "DEPLOY_BOOTSTRAP_PASSWORD": initial_password,
-                "ANSIBLE_BECOME_PASS": "deliberately different routine sudo password",
+                "ANSIBLE_BECOME_PASS": sudo_password,
             })
             output = deploy(False, DEPLOY_BOOTSTRAP_BECOME_PASSWORD="deliberately incorrect sudo password")
             assert "Incorrect sudo password" in output, output
             deploy()
+            output = deploy(False, DEPLOY_PLAYBOOK="site", DEPLOY_SSH_PRIVATE_KEY=private_key,
+                            ANSIBLE_BECOME_PASS="deliberately incorrect development sudo password")
+            assert "Incorrect sudo password" in output, output
+            assert password_status("initialadmin") == "P", "A failed sudo check retired the initial password"
             deploy(DEPLOY_PLAYBOOK="site", DEPLOY_SSH_PRIVATE_KEY=private_key)
+
+            assert password_status("initialadmin") == "L"
+            assert password_status("secondadmin") == "P"
 
             # Exercise the combined workflow from a missing configured account through
             # creation, a fresh key/sudo login, and automatic reuse on later runs.
@@ -151,8 +179,8 @@ def main():
                     "ansible_host": "127.0.0.1", "ansible_port": port,
                 },
             }}}}}))
-            event = {"inputs": {"server_address": "testserver", "bootstrap_user": "initialadmin",
-                                "bootstrap_password": initial_password}}
+            event = {"inputs": {"server_address": "testserver", "bootstrap_user": "secondadmin",
+                                "bootstrap_password": second_password}}
             event_file = root / "event.json"
             event_file.touch(mode=0o600)
             event_file.write_text(json.dumps(event))
@@ -193,7 +221,7 @@ def main():
             event_file.write_text(json.dumps(event))
             output = deploy(False, github=True)
             assert "Permission denied" in output, output
-            event["inputs"]["bootstrap_password"] = initial_password
+            event["inputs"]["bootstrap_password"] = second_password
             event_file.write_text(json.dumps(event))
             output = deploy(github=True)
             assert "Establishing development access" in output, output
@@ -202,6 +230,8 @@ def main():
             output = deploy(False, github=True, SUDO_PASSWORD="deliberately incorrect development password")
             assert "Incorrect sudo password" in output, output
             assert "Establishing development access" not in output, "Sudo failure triggered bootstrap"
+            assert password_status("secondadmin") == "L"
+            assert password_status(sudo_user) == "P"
             event["inputs"].update(bootstrap_user="unusedadmin", bootstrap_password="obsolete initial password")
             event_file.write_text(json.dumps(event))
             output = deploy(github=True)
