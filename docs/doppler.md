@@ -1,58 +1,33 @@
-# Doppler secrets in normal Codex sessions
+# Use Doppler secrets from a terminal
 
-Save a **read-only Doppler Service Token** as `DOPPLER_TOKEN` in GitHub's
-`development` environment, then run **Bootstrap VPS**. Use a token scoped to
-the Doppler config containing the application credentials this VPS should use.
-No new workflow input, TPM, interactive enrollment, or Doppler CLI is needed.
+Let a program on the VPS use a GitHub, Notion, or other application credential without putting its value in a shell command. A local service holds a read-only Doppler Service Token. The development user requests secret names through a wrapper that starts one trusted program with the selected values.
 
-When that secret is supplied, `site.yml` configures the `doppler_secrets` role
-after the development account exists. Without it, the role is skipped and any
-existing service and credential are left unchanged. Set
-`doppler_secrets_enabled: false` in inventory to leave this capability unmanaged
-on a particular host; this does not uninstall an existing service.
+## 1. Connect the VPS to Doppler
 
-## How it works
+1. Choose a Doppler config containing the application credentials this server should use. Any process running as the development user can request ordinary secret names from that config. Scope it to that account's work.
+2. Create a read-only Doppler Service Token for the config and save it as the `DOPPLER_TOKEN` secret in GitHub's `development` environment.
+3. Run **Bootstrap VPS** for the host. The role encrypts the token on the VPS, starts the service, and verifies the local connection. It needs neither a Doppler CLI login nor a TPM. Omitting the token or setting `doppler_secrets_enabled: false` leaves an existing service in place.
 
-```text
-GitHub development secret
-  → verified SSH + sudo
-  → systemd-creds encryption on the VPS
-  → dedicated systemd service reads its runtime credential
-  → local Unix socket accepts requests from the development account
-  → skill wrapper injects the selected application secrets into one command
+## 2. Check the connection
+
+Run these from the development user's SSH, Herdr, or tmux shell. Use a secret name your task needs. The example assumes `GITHUB_TOKEN` is configured.
+
+```bash
+python3 /usr/local/lib/doppler-secrets/client.py doctor --offline
+python3 /usr/local/lib/doppler-secrets/client.py check --require GITHUB_TOKEN
 ```
 
-The deployment scripts exclude the Doppler token from inventory generation,
-access checks, and initial-user bootstrap. The credential task uses SSH
-pipelining and stdin, with Ansible logging and diffs disabled for that task.
-Remote module-file retention must remain disabled. Neither the token nor its
-hash is written to inventory, command arguments, shell startup files, or logs.
+| Result | What it tells you |
+| --- | --- |
+| Offline check succeeds | The local service answered this user's request. |
+| Selected secret check succeeds | The service fetched a nonempty value under that name. |
+| An authorized read succeeds in the application | The application accepted that credential for that operation. |
 
-The role keeps ciphertext at
-`/etc/credstore.encrypted/doppler-secrets/doppler_token`. `systemd-creds` creates
-the root-only host key at `/var/lib/systemd/credential.secret` when needed; the
-role preserves it. The service runs as the separate, non-login `doppler-secrets`
-account and obtains the decrypted token through `LoadCredentialEncrypted`.
-The token is not placed in the service environment. Its runtime credential is
-plaintext while the service needs it; persistent storage contains ciphertext.
+If only the fetch fails, check the exact name, the service token's scope or expiry, and connectivity to Doppler. The service suppresses detailed upstream errors to protect secret values. Use `systemctl status doppler-secrets.service doppler-secrets.socket` for service status. Avoid printing credential files or environments.
 
-The root-owned `/run/doppler-secrets.sock` is accessible to the development
-account's primary group. The service also verifies the connecting process's UID.
-It accepts explicit secret names, not commands, URLs, or wildcard selections.
-Only the service contacts Doppler, using verified HTTPS and the API's selected
-secrets parameter. Redirects and local secret-cache fallback are disabled.
+## 3. Run a command with a selected secret
 
-This works with ordinary SSH, tmux, and Herdr sessions. The multiplexer does not
-manage credentials and needs no changes. The bootstrap token stays with the
-service; application secrets are available to the command that requests them.
-
-## Use the wrapper
-
-The [toolkit's `common` plugin](agent-toolkit.md) supplies the skill. Resolve its
-wrapper relative to the installed skill directory. For automation and direct
-commands, Ansible also installs a root-owned client at a stable path. Both use
-the same `run`, `check`, `doctor`, `paths`, `--require`, `--map`, and
-environment-filtering interface:
+Use `--require NAME` when the application expects the same environment variable name, or `--map SOURCE=TARGET` to rename it. Replace the example script with a trusted program on the VPS.
 
 ```bash
 python3 /usr/local/lib/doppler-secrets/client.py run \
@@ -61,73 +36,25 @@ python3 /usr/local/lib/doppler-secrets/client.py run \
   /usr/bin/node /path/to/trusted-client.mjs
 ```
 
-Replace the example with the exact names and command required by the task.
-Existing names-only `~/.codex/doppler/integrations.json` mappings are preserved.
-Applications read values from their environment. Never put values into command
-arguments, environment dumps, tracing output, or logs.
+The wrapper fetches before starting the program and stops on failure. `--clean-env` keeps only the selected secrets and explicitly inherited variables. Without it, ordinary ambient variables pass through. Doppler runtime variables are stripped. The program keeps its stdin, working directory, umask, signals, and exit status. Its output goes straight to the terminal, so use a client that keeps values out of arguments, tracing, and logs.
 
-`--clean-env` allows only selected secrets and explicitly inherited variables.
-Without it, ordinary ambient variables are retained, matching the previous
-wrapper; Doppler runtime variables are always stripped. The command keeps its
-stdin, working directory, umask, signals, and exit status.
-
-The managed wrapper uses the local service. It does not enroll or restore local
-CLI profiles; existing private profiles outside the skill package remain
-untouched and unused. Develop the plugin skill in the editable toolkit checkout.
-When toolkit management is disabled, the Doppler role installs the standalone
-skill at `~/.codex/skills/doppler-secrets` as a fallback.
+Automation uses the stable client path above. Codex uses the wrapper bundled with the toolkit's `common` plugin, or the standalone skill at `~/.codex/skills/doppler-secrets` when toolkit management is disabled. The names-only mapping at `~/.codex/doppler/integrations.json` and existing private profiles are preserved. The managed wrapper uses the local service. [Toolkit guide](agent-toolkit.md)
 
 ## Restart and rotation
 
-The service and socket start automatically after a reboot. A service restart
-decrypts the existing credential locally, without GitHub or a login session.
-Fetching application secrets still requires a working Doppler connection.
+1. To rotate the **service token**, put the replacement in GitHub's `development` environment and rerun **Bootstrap VPS** for each affected host. A changed token replaces the encrypted file atomically and restarts the service. An unchanged token preserves both ciphertext and service start time.
+2. Check an intended secret from each host, then revoke the old token in Doppler. The playbook does not create or revoke Doppler tokens.
+3. To change an **application credential**, update it in Doppler. The next wrapper invocation gets the new value. A running program keeps its existing environment.
 
-To rotate the service token, replace `DOPPLER_TOKEN` in GitHub's `development`
-environment and rerun **Bootstrap VPS** for each affected server. The writer
-compares the existing decrypted value with the candidate in memory, without
-printing or hashing either. A changed token is encrypted and atomically replaces
-the ciphertext; the service restarts to load it. An unchanged token preserves
-the ciphertext and service start time. No remote Doppler token is automatically
-created or revoked.
-
-When code, unit definitions, or the token change, Ansible resets the service's
-start-limit counter before restarting it. Planned rotation remains possible
-after recent maintenance; the normal crash limit stays in place. Unchanged
-runs leave the counter and service untouched.
-
-The deployment verifies local service readiness, not Doppler authentication.
-Run the wrapper's `check --require NAME` for an intended application secret to
-verify a replacement token before revoking the old one. A failed fetch stops the
-command. Updating an application secret in Doppler affects the next wrapper
-invocation; an already running application keeps its previously injected value.
+After a reboot, systemd starts the socket and service and decrypts the stored credential locally. Fetching an application secret still needs Doppler. Planned updates reset the service start-limit counter before restarting it.
 
 ## Permissions and recovery
 
-Host-key encryption protects against ordinary users reading the stored token.
-Root, or anyone with both the ciphertext and the host key, can decrypt it. A
-complete disk copy therefore includes the means to decrypt it. The development
-account already has sudo access, so this arrangement does not isolate secrets
-from that administrator. It prevents routine Codex commands from needing or
-inheriting the bootstrap token.
+| Component | Where it lives and who can use it |
+| --- | --- |
+| Service token at rest | Ciphertext at `/etc/credstore.encrypted/doppler-secrets/doppler_token`. The host key at `/var/lib/systemd/credential.secret` is root-only. Root or anyone with both files can decrypt the token, including from a complete disk copy. |
+| Runtime credential | systemd supplies the decrypted token to the non-login `doppler-secrets` service account with `LoadCredentialEncrypted`. The service keeps it out of the application environment. |
+| Local requests | The root-owned `/run/doppler-secrets.sock` allows the development user's primary group to connect. The service checks the caller's UID and accepts explicit names. It fetches them over verified HTTPS with redirects and local cache fallback disabled. |
+| Deployment | Only the routine host configuration receives the service token. It travels over SSH and stdin with logging and diffs suppressed. Keep SSH pipelining enabled and remote module-file retention disabled. |
 
-Any process running as the allowed development account can request ordinary
-secret names within the Service Token's config. Explicit selection limits each
-fetch and command environment; it is not a per-skill authorization policy.
-Scope the Doppler config accordingly. Commands receiving application secrets
-must remain trusted; the wrapper cannot redact arbitrary application output.
-
-Preserve the host key for recovery. If it is lost, existing ciphertext cannot be
-decrypted and setup fails visibly. Do not replace the system-wide key to rotate
-one token. Recover the key or explicitly remove only this role's unusable
-encrypted credential before provisioning a replacement from GitHub.
-
-For safe diagnostics, run the wrapper's `doctor --offline` or inspect
-`systemctl status doppler-secrets.service doppler-secrets.socket`. Offline health
-does not contact Doppler. Do not print runtime credential files or decrypted
-tokens while debugging.
-
-References: [systemd credential encryption](https://www.freedesktop.org/software/systemd/man/252/systemd-creds.html),
-[service credentials](https://www.freedesktop.org/software/systemd/man/252/systemd.exec.html#Credentials),
-[Doppler selected-secret API](https://docs.doppler.com/reference/secrets-download),
-and [Doppler Service Tokens](https://docs.doppler.com/docs/service-tokens).
+The development user has sudo. Selecting names limits what a command receives, while the service token determines what that account can request. Preserve the system-wide host key for recovery. If it is lost, recover it or deliberately remove only this role's unreadable ciphertext before reprovisioning the token. Replacing the system-wide key can affect other encrypted credentials. [systemd credentials](https://www.freedesktop.org/software/systemd/man/252/systemd-creds.html) · [Doppler Service Tokens](https://docs.doppler.com/docs/service-tokens)
