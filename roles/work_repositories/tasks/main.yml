@@ -5,11 +5,14 @@
 - name: Synchronize work repositories as the development account
   when: not ansible_check_mode
   become: true
-  become_user: "{{ work_repositories_user }}"
-  environment:
-    HOME: "{{ work_repositories_home }}"
+  become_user: root
   ansible.builtin.command:
     argv:
+      - /usr/bin/python3
+      - -I
+      - /usr/local/lib/work-repositories/process_activity.py
+      - "{{ work_repositories_user }}"
+      - "{{ work_repositories_directory }}"
       - /usr/bin/python3
       - /usr/local/lib/doppler-secrets/client.py
       - run
@@ -26,8 +29,8 @@
       - "{{ work_repositories_owner }}"
       - --topic
       - "{{ work_repositories_topic }}"
-      - --projects
-      - "{{ work_repositories_directory }}"
+      - --herdr-session
+      - "{{ work_repositories_herdr_session }}"
   register: work_repositories_result
   changed_when: work_repositories_result.rc == 0 and (work_repositories_result.stdout | from_json).changed
 

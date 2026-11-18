@@ -21,16 +21,19 @@ def completed(output):
 def main():
     subprocess.run(["systemctl", "start", "--no-block", *UNITS], check=True)
     deadline = time.monotonic() + 600
-    while time.monotonic() < deadline:
+    while True:
         # Package upgrades may restart D-Bus. Reconnect for each observation.
         result = subprocess.run(["systemctl", "show", *UNITS, "-p", "Id", "-p", "ActiveState",
-                                 "-p", "Result", "-p", "Job", "-p", "ExecMainStatus"],
+                                 "-p", "SubState", "-p", "Result", "-p", "Job", "-p", "ExecMainStatus",
+                                 "-p", "MainPID", "-p", "ControlPID"],
                                 capture_output=True, text=True, timeout=15)
         if result.returncode == 0 and completed(result.stdout):
             print("Initial APT jobs completed successfully; service baseline can be recorded")
             return
+        if time.monotonic() >= deadline:
+            raise AssertionError("APT jobs did not finish within ten minutes "
+                                 f"(systemctl show exited {result.returncode}). Last unit state:\n{result.stdout}")
         time.sleep(2)
-    raise AssertionError("APT jobs did not finish within ten minutes")
 
 
 if __name__ == "__main__":

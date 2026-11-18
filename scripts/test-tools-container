@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 engine="${CONTAINER_ENGINE:-podman}"
 image="localhost/ansible-playbooks-test:local"
 "$engine" build -f tests/Containerfile -t "$image" .
-"$engine" run --rm \
+"$engine" run --rm --cap-add=SYS_PTRACE \
   -v "$PWD/roles:/work/roles:ro" \
   -v "$PWD/tests:/work/tests:ro" \
   -v "$PWD/ansible.cfg:/work/ansible.cfg:ro" \
@@ -27,4 +27,5 @@ image="localhost/ansible-playbooks-test:local"
     runuser -u ansibletest -- python3 tests/toolchain-shell.py
     runuser -u ansibletest -- python3 tests/herdr.py
     runuser -u ansibletest -- python3 tests/herdr.py --cleanup
+    python3 tests/project-workspaces.py
   '

@@ -4,17 +4,24 @@
 import argparse
 import ctypes
 import fcntl
+from functools import partial
 import json
 import os
 from pathlib import Path
+import pwd
 import re
+import socket
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 
-# The installed shared module is root-owned; -I excludes user Python paths.
+# Both installed module directories are root-owned; -I excludes user Python paths.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import process_activity as activity
+
 sys.path.insert(0, "/usr/local/lib/github-access")
 from github_access import ApiError, GitHub, Git as AccessGit, SyncError
 
@@ -94,34 +101,9 @@ def inside(path, root):
         return False
 
 
-def process_activity(path):
-    inaccessible = False
-    for process in Path("/proc").iterdir():
-        if not process.name.isdigit():
-            continue
-        try:
-            if process.stat().st_uid != os.getuid():
-                continue
-            if inside(os.readlink(process / "cwd"), path):
-                return "a process is working in this repository"
-            for descriptor in (process / "fd").iterdir():
-                try:
-                    if inside(os.readlink(descriptor), path):
-                        return "a process has files open in this repository"
-                except FileNotFoundError:
-                    pass
-        except (FileNotFoundError, ProcessLookupError):
-            continue
-        except PermissionError:
-            inaccessible = True
-    if inaccessible:
-        return "cannot inspect a development-account process safely"
-    return None
-
-
-def busy_reason(path, home):
+def busy_reason(path, home, channel=None):
     """Conservative local activity checks, repeated immediately before each move."""
-    reason = process_activity(path)
+    reason = activity.scan(path, os.getuid()) if channel is None else activity.query(channel, path)
     if reason:
         return reason
     herdr = home / ".local/bin/herdr"
@@ -146,10 +128,88 @@ def busy_reason(path, home):
     return None
 
 
+class Herdr:
+    """Open existing checkouts without creating Git worktrees or replacing layouts."""
+
+    def __init__(self, home, session="default"):
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", session):
+            raise SyncError("Invalid Herdr session name.")
+        self.home, self.session = home, session
+        self.binary = home / ".local/bin/herdr"
+        account = pwd.getpwuid(os.getuid())
+        # The server and its shells must never inherit the sync's API credentials.
+        self.environment = {"HOME": str(home), "USER": account.pw_name, "LOGNAME": account.pw_name,
+                            "SHELL": account.pw_shell, "TERM": "xterm-256color", "LANG": "C.UTF-8",
+                            "PATH": f"{home}/.local/bin:/usr/local/bin:/usr/bin:/bin"}
+
+    def command(self, *args):
+        try:
+            result = subprocess.run([str(self.binary), *map(str, args)], cwd=self.home,
+                                    env=self.environment, capture_output=True, text=True,
+                                    check=True, timeout=20)
+            value = json.loads(result.stdout)
+            if not isinstance(value, dict) or "error" in value:
+                raise ValueError
+            return value
+        except (OSError, ValueError, subprocess.SubprocessError):
+            raise SyncError("Herdr did not complete the workspace operation; inspect the session and rerun synchronization.") from None
+
+    def running(self):
+        try:
+            sessions = self.command("session", "list", "--json")["sessions"]
+            return any(item["name"] == self.session and item["running"] for item in sessions)
+        except (KeyError, TypeError):
+            raise SyncError("Herdr returned an invalid session listing.") from None
+
+    def start(self):
+        if self.running():
+            return False
+        try:
+            process = subprocess.Popen([str(self.binary), "--session", self.session, "server"],
+                                       cwd=self.home, env=self.environment, stdin=subprocess.DEVNULL,
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                       start_new_session=True, umask=0o077)
+        except OSError:
+            raise SyncError("Could not start the Herdr session; verify the installed binary.") from None
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            # An interactive launch can win the startup race; reuse its server.
+            if self.running():
+                return True
+            if process.poll() is not None:
+                break
+            time.sleep(0.2)
+        raise SyncError("The Herdr session did not become ready; inspect it before rerunning synchronization.")
+
+    def reconcile(self, repositories):
+        report = {"session": self.session, "started": False, "created": [], "kept": []}
+        if not repositories:
+            return report
+        report["started"] = self.start()
+        for name, path in repositories:
+            try:
+                entries = self.command("--session", self.session, "worktree", "list", "--cwd", path)["result"]["worktrees"]
+                checkout = next(item for item in entries if item["path"] == str(path) and not item["is_bare"])
+                if checkout.get("open_workspace_id"):
+                    report["kept"].append(name)
+                    continue
+                # Herdr matches its saved checkout identity even after a pane changes cwd.
+                # Omitting --label also preserves a name set by a concurrent interactive open.
+                result = self.command("--session", self.session, "worktree", "open",
+                                      "--cwd", path, "--path", path, "--no-focus")["result"]
+                if type(result["already_open"]) is not bool:
+                    raise ValueError
+                report["kept" if result["already_open"] else "created"].append(name)
+            except (KeyError, TypeError, ValueError, StopIteration):
+                raise SyncError("Herdr could not identify the managed checkout; existing workspaces were preserved.") from None
+        return report
+
+
 class Reconciler:
-    def __init__(self, home, projects, owner, topic, api, git=None, activity=busy_reason):
+    def __init__(self, home, projects, owner, topic, api, git=None, activity=busy_reason, herdr=None):
         self.home, self.projects, self.owner, self.topic, self.api = home, projects, owner, topic, api
         self.git, self.activity = git or Git(home), activity
+        self.herdr = herdr
         if (projects.parent != home or projects.resolve() != projects or not projects.is_dir()
                 or not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*", projects.name)):
             raise SyncError("Projects must be an existing real directory directly inside the development home.")
@@ -320,6 +380,16 @@ class Reconciler:
                     raise SyncError("The archive path is not a real directory.")
                 target = f".archive/{ident}-{path.name}-{uuid.uuid4().hex[:12]}"
                 self.move(ident, record, target, "archived", "archived")
+            if self.herdr is not None:
+                repositories = []
+                for ident in desired:
+                    record = self.records.get(ident)
+                    if record is not None and record["state"] == "active":
+                        path = self.path(record["path"])
+                        if self.git.owned(path, ident, record["origin"]):
+                            repositories.append((record["repo"], path))
+                self.report["herdr"] = self.herdr.reconcile(repositories)
+                self.report["changed"] |= bool(self.report["herdr"]["started"] or self.report["herdr"]["created"])
             return self.report
 
 
@@ -328,6 +398,8 @@ def main():
     parser.add_argument("--owner", required=True)
     parser.add_argument("--topic", default="work")
     parser.add_argument("--projects", type=Path, required=True)
+    parser.add_argument("--herdr-session", default="default")
+    parser.add_argument("--activity-fd", type=int)
     args = parser.parse_args()
     token = os.environ.pop("GITHUB_TOKEN", "")
     if not token:
@@ -336,7 +408,15 @@ def main():
         raise SyncError("Run as the development account, never root.")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", args.owner):
         raise SyncError("Invalid GitHub owner.")
-    return Reconciler(Path.home(), args.projects, args.owner, args.topic, GitHub(token)).run()
+    home = Path.home()
+    reconciler = Reconciler(home, args.projects, args.owner, args.topic, GitHub(token),
+                            herdr=Herdr(home, args.herdr_session))
+    if args.activity_fd is None:
+        return reconciler.run()
+    with socket.socket(fileno=args.activity_fd) as channel:
+        channel.set_inheritable(False)
+        reconciler.activity = partial(busy_reason, channel=channel)
+        return reconciler.run()
 
 
 if __name__ == "__main__":

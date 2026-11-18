@@ -5,5 +5,6 @@ work_repositories_topic: "{{ lookup('ansible.builtin.env', 'PROJECTS_TOPIC') | d
 work_repositories_user: "{{ dev_host_user }}"
 work_repositories_home: "{{ dev_host_home }}"
 work_repositories_directory: "{{ dev_host_home }}/{{ dev_host_projects_dir }}"
+work_repositories_herdr_session: default
 # Names only. The local Doppler service supplies the value at execution time.
 work_repositories_github_secret: GITHUB_TOKEN
