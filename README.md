@@ -21,7 +21,7 @@ The managed host needs Debian/Ubuntu, Python 3, OpenSSH, APT, and systemd. The c
 
 1. Follow [workflow setup](docs/github-deployment.md#1-configure-the-environment) to save the `SUDO_USER` variable, SSH private key, `SUDO_PASSWORD` secret, and trusted host keys in the `development` GitHub environment. List managed servers in the [development inventory](inventories/development/hosts.yml).
 2. Open **Actions → Bootstrap VPS → Run workflow**. Enter the server address and its initial username and password. One run creates the configured account when needed, verifies its key and sudo access, and configures the server. For `dev.alx4j.com`, the initial username is `debian`.
-3. Complete [account onboarding](docs/configuration.md#account-onboarding): log in to Codex, run Moshi's QR pairing from your terminal, and review TokenEconomizer's hooks.
+3. After the first bootstrap, SSH in as the development user to complete [account onboarding](docs/configuration.md#account-onboarding). Log in to Codex, [authorize ClickUp MCP](docs/configuration.md#authorize-clickup-mcp), run Moshi's QR pairing from your terminal, and review TokenEconomizer's hooks.
 4. Merge later configuration changes to `main`. After validation passes, **Bootstrap VPS** updates inventory servers with working development-account access. It warns and skips servers without that access; first setup remains manual.
 
 You can also rerun a single server manually with just its address once development-account access works. Pull requests run validation without contacting inventory servers. Keep provider-console access available when changing SSH or sudo.

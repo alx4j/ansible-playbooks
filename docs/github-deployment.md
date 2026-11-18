@@ -62,6 +62,8 @@ The manual run first checks development-account key and sudo access. If that con
 
 Manual runs select one server. A registered alias or address uses that host's inventory port and configuration overrides, just as automatic runs do. Unlisted addresses use the shared defaults. Initial credentials always come from the form. Host patterns, shell options, and multiple targets are rejected. All connections enforce the saved host keys. Keep provider-console access available for recovery.
 
+After the first successful run on a new VPS, SSH in as the development user and [authorize ClickUp MCP for Codex](configuration.md#authorize-clickup-mcp). This requires a one-time browser approval.
+
 ## 3. Apply later changes
 
 Merge configuration changes into `main`. After **Validate playbooks** succeeds for that push, the same **Bootstrap VPS** workflow checks out the validated commit and processes inventory servers one at a time:

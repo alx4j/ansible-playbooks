@@ -167,14 +167,30 @@ pins; the next Ansible run reconciles those selected tool versions.
 
 ## Account onboarding
 
-After provisioning, run these interactively as the development user:
+After the first bootstrap on a new VPS, SSH in as the development user and sign in to Codex.
 
 ```bash
 codex login --device-auth
-codex mcp login clickup --no-browser
 ```
 
-Register the ClickUp MCP server in Codex configuration before login. OAuth credentials are not managed by these playbooks.
+### Authorize ClickUp MCP
+
+1. If the `clickup` server is missing from `~/.codex/config.toml`, add this entry.
+
+   ```toml
+   [mcp_servers.clickup]
+   url = "https://mcp.clickup.com/mcp"
+   ```
+
+2. Start the OAuth login from the VPS.
+
+   ```bash
+   codex mcp login clickup --no-browser
+   ```
+
+3. Open the printed authorization URL in your local browser, select the intended ClickUp Workspace, and approve access. Paste the resulting callback URL into the waiting VPS terminal. Codex reuses this authorization on subsequent runs.
+
+To verify access, start Codex on the VPS and ask it to use ClickUp MCP to identify the signed-in ClickUp user.
 
 ### Pair Moshi with the QR code
 
