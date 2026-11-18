@@ -1,6 +1,6 @@
 # Your first login after bootstrap
 
-SSH in as the development user with an authorized key. Bootstrap installs the deployment public key. Your workstation needs its matching private key or another key already authorized for that account.
+SSH in as the development user with an authorized key. Supply your workstation’s public key during bootstrap or add it afterward using **Upload public SSH key**. The runner authenticates with its dedicated key. [Upload instructions](github-deployment.md#upload-a-public-ssh-key)
 
 1. **Sign in to Codex.** Run `codex login --device-auth` and complete device authorization in your browser.
 2. **Connect ClickUp.** Register the server and approve workspace access once. [Authorize ClickUp MCP](#authorize-clickup-mcp)

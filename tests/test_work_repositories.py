@@ -30,21 +30,27 @@ def repository(ident=1, name="one", topics=None):
 class FakeGitHub:
     def __init__(self, repositories):
         self.repositories = repositories
-        self.listed = None
-        self.lookup = None
 
     def request(self, path, payload=None):
         if path == "/user":
             return {"login": "fixture"}
-        if self.lookup:
-            return self.lookup(path)
-        for repo in self.repositories:
-            if path == f"/repos/{repo['owner']['login']}/{repo['name']}":
-                return copy.deepcopy(repo)
-        raise SYNC.ApiError(404)
+        raise AssertionError(f"Unexpected GitHub request: {path}")
 
     def pages(self, path):
-        return iter(copy.deepcopy(self.repositories if self.listed is None else self.listed))
+        return iter(copy.deepcopy(self.repositories))
+
+
+def legacy_archive(projects, manifest):
+    """Reproduce a checkout and manifest written by the former archival policy."""
+    data = json.loads(manifest.read_text())
+    record = data["repositories"]["1"]
+    source = projects / record["path"]
+    archive = projects / ".archive" / "1-one-legacy"
+    archive.parent.mkdir()
+    source.rename(archive)
+    record.update(state="archived", path=str(archive.relative_to(projects)))
+    manifest.write_text(json.dumps(data))
+    return archive
 
 
 class LocalGit(SYNC.Git):
@@ -83,8 +89,8 @@ class WorkRepositoriesTests(unittest.TestCase):
         self.git.run("-C", path, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
                      "commit", "-qm", message)
 
-    def sync(self, activity=lambda *_: None, herdr=None):
-        return SYNC.Reconciler(self.home, self.projects, "fixture", "work", self.api, self.git, activity, herdr).run()
+    def sync(self, activity=lambda *_: None, herdr=None, topic="work"):
+        return SYNC.Reconciler(self.home, self.projects, "fixture", topic, self.api, self.git, activity, herdr).run()
 
     def test_workspace_reconciliation_backfills_existing_and_includes_new_clones(self):
         self.sync()
@@ -118,12 +124,13 @@ class WorkRepositoriesTests(unittest.TestCase):
         herdr = Mock()
         herdr.reconcile.return_value = {"started": False, "created": []}
         result = self.sync(activity=lambda *_: "active workspace", herdr=herdr)
-        self.assertTrue(result["skipped"])
+        self.assertFalse(result["changed"])
         herdr.reconcile.assert_called_once_with([])
-        self.assertEqual(self.sync(herdr=herdr)["archived"], ["fixture/one"])
+        self.assertFalse(self.sync(herdr=herdr)["changed"])
+        self.assertTrue((self.projects / "one/.git").is_dir())
         herdr.reconcile.assert_called_with([])
         self.api.repositories[0]["topics"] = ["work"]
-        self.assertEqual(self.sync(herdr=herdr)["restored"], ["fixture/one"])
+        self.assertEqual(self.sync(herdr=herdr)["kept"], ["fixture/one"])
         herdr.reconcile.assert_called_with([("fixture/one", self.projects / "one")])
 
     def test_workspace_failure_keeps_clone_and_retries_without_cloning_again(self):
@@ -159,9 +166,12 @@ class WorkRepositoriesTests(unittest.TestCase):
         self.assertEqual((path / ".git/config").read_bytes(), before)
         self.assertFalse((path / ".git/FETCH_HEAD").exists())
 
-    def test_archive_preserves_unpushed_work_ignored_files_stashes_and_restores(self):
-        self.sync()
+    def test_topic_removal_and_readdition_preserve_checkout_in_place(self):
+        topic = "server-projects"
+        self.api.repositories[0]["topics"] = [topic]
+        self.sync(topic=topic)
         path = self.projects / "one"
+        inode = path.stat().st_ino
         self.git.run("-C", path, "switch", "-c", "unpublished")
         (path / "tracked").write_text("unpublished commit\n")
         self.git.run("-C", path, "add", ".")
@@ -173,19 +183,21 @@ class WorkRepositoriesTests(unittest.TestCase):
         (path / "untracked").write_text("local file\n")
         (path / ".env").write_text("fixture-only\n")
         refs = self.git.run("-C", path, "show-ref")
-        self.api.repositories[0]["topics"] = []
-        self.assertEqual(self.sync()["archived"], ["fixture/one"])
-        archived = self.projects / self.record()["path"]
-        self.assertFalse(path.exists())
-        self.assertEqual(self.git.run("-C", archived, "show-ref"), refs)
-        self.assertEqual((archived / ".env").read_text(), "fixture-only\n")
-        self.assertEqual((archived / "tracked").read_text(), "unfinished\n")
-        self.assertFalse(self.sync()["changed"])
         self.api.repositories[0]["topics"] = ["work"]
-        self.assertEqual(self.sync()["restored"], ["fixture/one"])
+        removed = self.sync(topic=topic)
+        self.assertFalse(removed["changed"])
+        self.assertEqual(removed["archived"], [])
+        self.assertEqual(path.stat().st_ino, inode)
+        self.assertFalse((self.projects / ".archive").exists())
+        self.api.repositories[0]["topics"].append(topic)
+        result = self.sync(topic=topic)
+        self.assertFalse(result["changed"])
+        self.assertEqual(result["kept"], ["fixture/one"])
+        self.assertEqual(path.stat().st_ino, inode)
         self.assertEqual(self.git.run("-C", path, "show-ref"), refs)
+        self.assertEqual((path / ".env").read_text(), "fixture-only\n")
+        self.assertEqual((path / "tracked").read_text(), "unfinished\n")
         self.assertEqual((path / "untracked").read_text(), "local file\n")
-        self.assertFalse(self.sync()["changed"])
 
     def test_existing_unmanaged_directory_is_never_adopted(self):
         path = self.projects / "one"
@@ -198,14 +210,10 @@ class WorkRepositoriesTests(unittest.TestCase):
         self.sync()
         self.assertEqual((path / "keep").read_text(), "personal\n")
 
-    def test_access_loss_and_stale_listing_never_archive(self):
+    def test_checkout_missing_from_listing_stays_in_place(self):
         self.sync()
-        self.api.listed = []
-        self.assertIn("topic still exists", self.sync()["skipped"][0]["reason"])
         self.api.repositories = []
-        result = self.sync()
-        self.assertFalse(result["changed"])
-        self.assertIn("inaccessible", result["skipped"][0]["reason"])
+        self.assertFalse(self.sync()["changed"])
         self.assertTrue((self.projects / "one").exists())
 
     def test_listing_failure_or_duplicate_ids_prevent_all_changes(self):
@@ -216,9 +224,9 @@ class WorkRepositoriesTests(unittest.TestCase):
         self.assertFalse((self.projects / "two").exists())
         def partial(_):
             yield repository(2, "two")
-            raise SYNC.ApiError(403)
+            raise github_access.ApiError(403)
         with patch.object(self.api, "pages", side_effect=partial):
-            with self.assertRaises(SYNC.ApiError):
+            with self.assertRaises(github_access.ApiError):
                 self.sync()
         self.assertTrue((self.projects / "one").exists())
         self.assertFalse((self.projects / "two").exists())
@@ -233,26 +241,41 @@ class WorkRepositoriesTests(unittest.TestCase):
         self.api.repositories.append(repository(2, "one"))
         self.assertTrue(self.sync()["skipped"])
 
-    def test_positive_lookup_must_match_id_and_owner(self):
+    def test_changed_repository_identity_cannot_take_over_checkout(self):
         self.sync()
-        self.api.listed = []
-        self.api.lookup = lambda _: repository(99, "one", [])
+        self.api.repositories = [repository(99, "one")]
         self.assertFalse(self.sync()["changed"])
-        self.api.lookup = lambda _: {**repository(1, "one", []), "owner": {"login": "another-owner"}}
+        self.api.repositories = [{**repository(), "owner": {"login": "another-owner"}}]
         self.assertFalse(self.sync()["changed"])
         self.assertTrue((self.projects / "one").exists())
 
-    def test_busy_and_linked_worktrees_prevent_archive(self):
+    def test_legacy_archive_restores_only_when_selected_and_destination_free(self):
         self.sync()
+        archive = legacy_archive(self.projects, self.manifest())
+        (archive / "unfinished").write_text("local edits")
         self.api.repositories[0]["topics"] = []
+        self.assertFalse(self.sync()["changed"])
+        self.assertTrue(archive.is_dir())
+        self.api.repositories[0]["topics"] = ["work"]
+        path = self.projects / "one"
+        path.mkdir()
+        self.assertIn("destination already exists", self.sync()["skipped"][0]["reason"])
+        path.rmdir()
+        self.assertEqual(self.sync()["restored"], ["fixture/one"])
+        self.assertEqual((path / "unfinished").read_text(), "local edits")
+        self.assertFalse(self.sync()["changed"])
+
+    def test_busy_and_linked_worktrees_prevent_legacy_restore(self):
+        self.sync()
+        archive = legacy_archive(self.projects, self.manifest())
         result = self.sync(activity=lambda *_: "active workspace")
         self.assertFalse(result["changed"])
-        self.assertFalse((self.projects / ".archive").exists())
-        self.git.run("-C", self.projects / "one", "worktree", "add", "-b", "linked", self.root / "linked")
+        self.assertIn("active workspace", result["skipped"][0]["reason"])
+        self.git.run("-C", archive, "worktree", "add", "-b", "linked", self.root / "linked")
         self.assertIn("linked Git worktrees", self.sync()["skipped"][0]["reason"])
-        self.assertTrue((self.projects / "one").exists())
+        self.assertTrue(archive.is_dir())
 
-    def test_actual_process_cwd_and_open_file_prevent_archive(self):
+    def test_actual_process_cwd_and_open_file_detected(self):
         self.sync()
         path = self.projects / "one"
         process = subprocess.Popen(["sleep", "60"], cwd=path)
@@ -264,9 +287,9 @@ class WorkRepositoriesTests(unittest.TestCase):
         with (path / "tracked").open():
             self.assertIn("files open", SYNC.busy_reason(path, self.home))
 
-    def test_activity_reader_failure_preserves_checkout(self):
+    def test_activity_reader_failure_preserves_legacy_archive(self):
         self.sync()
-        self.api.repositories[0]["topics"] = []
+        archive = legacy_archive(self.projects, self.manifest())
         channel, reader = socket.socketpair(type=socket.SOCK_SEQPACKET)
         with channel, reader:
             reader.sendall(b"unexpected")
@@ -277,14 +300,15 @@ class WorkRepositoriesTests(unittest.TestCase):
                     result = self.sync(activity=lambda path, home: SYNC.busy_reason(path, home, channel))
                     self.assertEqual(result["skipped"], [{"repository": "fixture/one", "reason": SYNC.activity.UNKNOWN}])
                     self.assertFalse(result["changed"])
-                    self.assertTrue((self.projects / "one/tracked").is_file())
+                    self.assertTrue((archive / "tracked").is_file())
 
     def test_origin_change_and_symlinks_preserve_everything(self):
         self.sync()
         path = self.projects / "one"
         self.git.run("-C", path, "remote", "set-url", "origin", "git@github.com:fixture/different.git")
-        self.api.repositories[0]["topics"] = []
-        self.assertFalse(self.sync()["changed"])
+        result = self.sync()
+        self.assertFalse(result["changed"])
+        self.assertIn("ownership or origin changed", result["skipped"][0]["reason"])
         moved = self.root / "outside"
         path.rename(moved)
         path.symlink_to(moved, target_is_directory=True)
@@ -306,11 +330,14 @@ class WorkRepositoriesTests(unittest.TestCase):
                 self.manifest().write_text(json.dumps(data))
                 recovered = self.sync()
                 self.assertEqual(recovered["skipped"], [])
-                self.assertEqual(self.record()["state"], "archived")
                 self.assertNotIn("pending", self.record())
                 if complete_move:
+                    self.assertEqual(self.record()["state"], "archived")
                     self.assertEqual(self.record()["path"], ".archive/recovery")
-                    self.assertEqual(recovered["archived"], [])
+                else:
+                    self.assertEqual(self.record()["state"], "active")
+                    self.assertEqual(self.record()["path"], "one")
+                self.assertTrue((self.projects / self.record()["path"] / "tracked").is_file())
                 self.api.repositories[0]["topics"] = ["work"]
                 self.sync()
 
@@ -338,7 +365,7 @@ class WorkRepositoriesTests(unittest.TestCase):
             SYNC.rename_exclusive(source, destination)
         self.assertTrue(source.is_dir() and destination.is_dir())
 
-    def test_herdr_activity_and_probe_failure_prevent_archive(self):
+    def test_herdr_activity_and_probe_failure_prevent_legacy_restore(self):
         herdr = self.home / ".local/bin/herdr"
         herdr.parent.mkdir(parents=True)
         herdr.touch()
@@ -401,21 +428,17 @@ class WorkRepositoriesTests(unittest.TestCase):
         with patch.object(git, "authenticate", return_value=False), \
                 patch.object(git, "ensure_key", return_value=False), \
                 patch.object(git, "process", return_value=public), \
-                patch.object(self.api, "pages", side_effect=SYNC.ApiError(403)):
+                patch.object(self.api, "pages", side_effect=github_access.ApiError(403)):
             with self.assertRaisesRegex(SYNC.SyncError, "Git SSH keys write"):
                 git.enroll(self.api, "fixture")
         self.assertEqual(list(self.projects.iterdir()), [])
 
-    def test_removal_lookup_failure_aborts_before_cloning_new_repositories(self):
+    def test_changing_configured_topic_clones_new_matches_and_keeps_old_checkouts(self):
         self.sync()
-        self.api.repositories = [repository(2, "two")]
-        def forbidden(_):
-            raise SYNC.ApiError(403)
-        self.api.lookup = forbidden
-        with self.assertRaises(SYNC.ApiError):
-            self.sync()
-        self.assertFalse((self.projects / "two").exists())
-        self.assertTrue((self.projects / "one").exists())
+        self.api.repositories.append(repository(2, "two", ["server-projects"]))
+        self.assertEqual(self.sync(topic="server-projects")["cloned"], ["fixture/two"])
+        self.assertEqual(sorted(path.name for path in self.projects.iterdir()), ["one", "two"])
+        self.assertFalse(self.sync(topic="server-projects")["changed"])
 
     def test_concurrent_run_cannot_change_repositories(self):
         lock = self.home / ".local/state/work-repositories/projects.lock"

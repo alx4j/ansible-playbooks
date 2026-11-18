@@ -20,6 +20,15 @@ on:
         description: Temporary initial account password (retained in event data, locked on the VPS after key handoff)
         type: string
         required: false
+      sudo_user:
+        description: Sudo username for development and future updates
+        type: string
+        default: dev
+        required: true
+      user_public_key:
+        description: Personal SSH public key (optional, leave blank to add it later)
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -81,8 +90,7 @@ jobs:
           PROJECTS_TOPIC: ${{ vars.PROJECTS_TOPIC }}
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
-          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.SUDO_PRIVATE_KEY }}
-          DEPLOY_SUDO_USER: ${{ vars.SUDO_USER }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
           SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
@@ -95,8 +103,7 @@ jobs:
           PROJECTS_TOPIC: ${{ vars.PROJECTS_TOPIC }}
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
-          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.SUDO_PRIVATE_KEY }}
-          DEPLOY_SUDO_USER: ${{ vars.SUDO_USER }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
           SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |

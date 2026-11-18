@@ -13,7 +13,7 @@ import tempfile
 import time
 import uuid
 
-from test_work_repositories import FakeGitHub, LocalGit, SYNC, repository
+from test_work_repositories import FakeGitHub, LocalGit, SYNC, legacy_archive, repository
 
 
 def main(projects, channel):
@@ -100,17 +100,22 @@ def main(projects, channel):
             assert layout() == after
             assert not sync()["changed"]
 
-            # An open workspace still blocks archiving; closing it allows the normal move.
+            # Removing the topic preserves the checkout and its open workspace.
             api.repositories[0]["topics"] = []
             busy = sync()
-            assert busy["skipped"] and not busy["archived"], busy
+            assert not busy["changed"] and not busy["archived"], busy
+            assert layout() == after
             assert "fixture/one" not in busy["herdr"]["kept"]
             command("workspace", "close", workspace)
             deadline = time.monotonic() + 10
             while reason := activity(projects / "one", home):
                 assert time.monotonic() < deadline, f"Closed fixture workspace remained active: {reason}"
                 time.sleep(0.1)
-            # A non-dumpable process can hold a checkout even after Herdr closes it.
+            assert not sync()["changed"]
+            assert (projects / "one/tracked").is_file()
+            # A legacy archive still needs the privileged activity check before a restore.
+            archive = legacy_archive(projects, state / (projects.name + ".json"))
+            api.repositories[0]["topics"] = ["work"]
             holder_code = """import ctypes, sys
 assert ctypes.CDLL(None).prctl(4, 0, 0, 0, 0) == 0  # PR_SET_DUMPABLE
 with open(sys.argv[1]) as tracked:
@@ -119,24 +124,19 @@ with open(sys.argv[1]) as tracked:
 print('released', flush=True)
 sys.stdin.readline()
 """
-            with subprocess.Popen([sys.executable, "-c", holder_code, str(projects / "one/tracked")],
+            with subprocess.Popen([sys.executable, "-c", holder_code, str(archive / "tracked")],
                                   cwd=home, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as holder:
                 try:
                     assert holder.stdout.readline().strip() == "holding"
-                    assert SYNC.activity.scan(projects / "one", os.getuid()) == SYNC.activity.UNKNOWN
+                    assert SYNC.activity.scan(archive, os.getuid()) == SYNC.activity.UNKNOWN
                     held = sync()
                     assert held["skipped"] == [{"repository": "fixture/one", "reason": SYNC.activity.FILES_OPEN}], held
                     holder.stdin.write("release\n")
                     holder.stdin.flush()
                     assert holder.stdout.readline().strip() == "released"
-                    archived = sync()
+                    restored = sync()
                 finally:
                     holder.stdin.close()
-            assert archived["archived"] == ["fixture/one"], archived
-            assert not (projects / "one").exists()
-            assert not sync()["changed"]
-            api.repositories[0]["topics"] = ["work"]
-            restored = sync()
             assert restored["restored"] == ["fixture/one"] and restored["herdr"]["created"] == ["fixture/one"], restored
             assert (projects / "one/tracked").read_text() == "fixture\n"
             assert not sync()["changed"]
@@ -152,7 +152,7 @@ sys.stdin.readline()
             (state / (projects.name + ".json")).unlink(missing_ok=True)
             (state / (projects.name + ".lock")).unlink(missing_ok=True)
 
-    print("Herdr startup, backfill, layout preservation, restart, archive/restore, and zero-change reruns passed")
+    print("Herdr startup, backfill, layout preservation, restart, topic removal, legacy restore, and zero-change reruns passed")
 
 
 if __name__ == "__main__":

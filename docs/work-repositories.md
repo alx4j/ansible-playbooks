@@ -8,7 +8,7 @@ Tag a repository on GitHub and the next bootstrap run clones it into your projec
 2. Add the `work` topic to each repository you want on the server. To use a different topic, set `PROJECTS_TOPIC` in GitHub's `development` environment, or set `work_repositories_topic` for a single host.
 3. Choose the destination folder with `PROJECTS_DIR` if needed. Its default is `projects` under the development user's home. [Folder settings](configuration.md#projects-directory)
 
-Topic names start with a lowercase letter or digit and contain 1–50 lowercase letters, digits, or hyphens. Blank `PROJECTS_TOPIC` uses `work`. Changing the selection can archive previously managed projects on the next run.
+Topic names start with a lowercase letter or digit and contain 1–50 lowercase letters, digits, or hyphens. Blank `PROJECTS_TOPIC` uses `work`. Changing the selection leaves existing checkouts and their local work in place.
 
 ## GitHub access
 
@@ -28,7 +28,7 @@ New clones use SSH and a pinned GitHub host key. Each clone's `core.sshCommand` 
 ## 2. Run sync and open a workspace
 
 1. Run **Bootstrap VPS** or wait for a validated `main` update. Editing a topic alone does not start a run.
-2. Read the workflow results for cloned, kept, archived, restored, and skipped projects. The `herdr` result names the session and the workspaces it created or kept.
+2. Read the workflow results for cloned, kept, restored, and skipped projects. The `herdr` result names the session and the workspaces it created or kept.
 3. SSH in as the development user and run `herdr`. Select a workspace to open its checkout. Start `codex` or a build when you're ready. [Using workspaces](herdr.md)
 
 | What the sync finds | What it does |
@@ -36,20 +36,16 @@ New clones use SSH and a pinned GitHub host key. Each clone's `core.sshCommand` 
 | Selected repository is missing | Clones its default branch and full history. Initialize submodules or Git LFS content yourself if needed. |
 | Managed checkout already exists | Preserves the branch, files, commits, and Git config. Reuses the Herdr workspace or recreates a missing one. |
 | Destination contains an unrelated directory or a manual clone | Leaves it in place and reports a skip. |
-| Confirmed topic removal on an inactive, managed checkout | Moves the whole directory to `$PROJECTS_DIR/.archive/`. |
-| Archived project is selected again | Moves it back if it is inactive and the destination is free. |
+| Repository no longer matches `PROJECTS_TOPIC` | Leaves the checkout and existing workspace in place. |
+| Project archived by an older version is selected again | Moves it back if it is inactive and the destination is free. |
 
 ## Project workspaces
 
 Sync starts the configured Herdr session in the background when there are projects to open. Each new workspace starts a shell in the checkout and uses its directory name as the initial label. It preserves existing labels, layouts, running shells, and focus. A workspace uses the existing clone and branch. If workspace setup fails after cloning, rerun once Herdr works. The successful clone is still there.
 
-## Archive or restore a project
+## Restore an older archive
 
-1. Remove its topic, close its Herdr workspace, and finish activity using the checkout, including linked Git worktrees. Run sync.
-2. Find the checkout under `$PROJECTS_DIR/.archive/`. It still contains local branches, unpushed commits, stashes, ignored files, and uncommitted changes. Archives stay on the same disk and take the same space.
-3. To restore, add the topic again, free the destination, and run sync. Archives have no automatic expiration.
-
-Sync completes GitHub pagination before acting. Before archiving, it confirms the repository ID and topic removal with a fresh lookup. Lost access, a transfer, a failed lookup, or a changed ownership marker cannot authorize a move. A root helper checks process working directories and open files for the development user. A referenced Herdr workspace, a linked worktree, or an inconclusive activity check keeps the checkout in place. Close active work before the run since a new process can start after the check.
+If an older version moved your checkout into `$PROJECTS_DIR/.archive/`, select the repository with the configured topic and rerun sync. The restore uses the original checkout, including unpushed commits, stashes, and local files. The destination must be free and the archived checkout must be inactive. A referenced Herdr workspace, a linked worktree, an open file, or an inconclusive activity check postpones the restore.
 
 A private manifest under `~/.local/state/work-repositories/<projects-folder>.json` and a marker inside `.git` identify owned checkouts. A GitHub rename preserves the local directory and origin. Sync runs are locked, clones are staged, and interrupted moves can recover. Changing the projects folder selects a new manifest.
 

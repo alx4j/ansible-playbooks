@@ -22,9 +22,20 @@ trap 'rm -rf -- "$vm_dir"' EXIT
 printf '%s\n' 'Unattended-Upgrade::MinimalSteps "false";' | sudo tee /etc/apt/apt.conf.d/99ansible-vm-test > /dev/null
 sudo apt-get update -qq
 sudo apt-get install -y --no-install-recommends openssh-server sudo acl unattended-upgrades
-# Fetch the runner image's eligible updates before measuring the configured services.
-# Share the distribution's daily lock with timer jobs that fired at boot.
+# Fetch eligible updates under the distribution's daily lock, including on images
+# whose persistent timers have already fired at boot.
 sudo flock /var/lib/apt/daily_lock unattended-upgrade --download-only
+finish_apt_jobs() {
+  if ! sudo env "PATH=$PATH" python3 tests/wait-apt.py; then
+    # Show process names and unit state without exposing arguments or environment.
+    ps -e -o pid,ppid,stat,wchan:24,comm:24,cgroup | awk 'NR == 1 || /apt-daily(-upgrade)?[.]service/'
+    sudo journalctl -u apt-daily.service -u apt-daily-upgrade.service --lines=40 --no-pager
+    sudo tail -n 40 /var/log/unattended-upgrades/unattended-upgrades.log
+    return 1
+  fi
+}
+# Drain the image backlog before provisioning so both applies see the updated packages.
+finish_apt_jobs
 # Hosted images set per-user XDG paths globally, including for SSH logins.
 # Restore normal per-user defaults on this disposable VM before creating accounts.
 # https://github.com/actions/runner-images/issues/14649
@@ -79,13 +90,8 @@ env -u DOPPLER_TOKEN ansible-playbook -i "$vm_dir/inventory.json" site.yml \
 # The workspace fixture only needs the first install and cleans up its own session.
 sudo env "PATH=$PATH" python3 tests/project-workspaces.py
 run_tool_test tests/tokeneconomizer.py
-# Persistent APT timers can catch up immediately and restart services after
-# library upgrades. Finish that initial work before measuring convergence.
-if ! sudo env "PATH=$PATH" python3 tests/wait-apt.py; then
-  # Show which package processes are waiting, without logging arguments or environment.
-  ps -e -o pid,ppid,stat,wchan:24,comm:24,cgroup | awk 'NR == 1 || /apt-daily(-upgrade)?[.]service/'
-  exit 1
-fi
+# Check the configured APT services again before recording the convergence baseline.
+finish_apt_jobs
 sudo env "PATH=$PATH" python3 tests/doppler-runtime.py
 run_tool_test tests/java-shell.py --prepare
 run_tool_test tests/toolchain-shell.py --prepare
@@ -107,15 +113,23 @@ assert discovery["installed"] and any(item["name"] == "ansible-moshi-test" and i
                                       for item in discovery["sessions"]), discovery
 PY
 sudo env "PATH=$PATH" python3 tests/vm-state.py | tee "$vm_dir/state-before.json" > /dev/null
+package_state() {
+  dpkg-query -W -f='${binary:Package}\t${db:Status-Abbrev}\t${Version}\n'
+}
+package_state > "$vm_dir/packages-before"
 ansible-playbook -i "$vm_dir/inventory.json" site.yml > "$vm_dir/second-run.log"
 cat "$vm_dir/second-run.log"
-python3 - "$vm_dir/second-run.log" <<'PY'
+if ! python3 - "$vm_dir/second-run.log" <<'PY'; then
 from pathlib import Path
 import re
 import sys
 output = Path(sys.argv[1]).read_text()
 assert re.search(r"vm\s+:.*changed=0\s+unreachable=0\s+failed=0", output), "Full host configuration did not converge"
 PY
+  package_state > "$vm_dir/packages-after"
+  diff -u "$vm_dir/packages-before" "$vm_dir/packages-after"
+  exit 1
+fi
 run_tool_test tests/java-shell.py
 run_tool_test tests/toolchain-shell.py
 run_tool_test tests/herdr.py

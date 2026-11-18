@@ -26,6 +26,31 @@ def public_key(private_key):
     return result.stdout.strip()
 
 
+def personal_public_key(value):
+    if isinstance(value, str) and not value.strip():
+        return None, None
+    # Install only the key itself. A pasted comment is unnecessary in Ansible inventory.
+    match = re.fullmatch(
+        r"(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com|"
+        r"sk-ecdsa-sha2-nistp256@openssh\.com)[ \t]+([A-Za-z0-9+/]+={0,2})(?:[ \t]+[^\r\n\0]*)?(?:\r?\n)?",
+        value if isinstance(value, str) else "",
+    )
+    if not match:
+        raise ValueError("Provide one OpenSSH public key in user_public_key.")
+    key = " ".join(match.groups())
+    check = subprocess.run(["ssh-keygen", "-l", "-E", "sha256", "-f", "-"], input=key + "\n", text=True,
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=10)
+    if check.returncode:
+        raise ValueError("Provide a valid OpenSSH public key in user_public_key.")
+    return key, check.stdout.split()[1]
+
+
+def validate_sudo_user(user):
+    if not isinstance(user, str) or not re.fullmatch(r"[a-z_][a-z0-9_-]*", user) or user == "root":
+        raise ValueError("Provide a valid non-root sudo username.")
+    return user
+
+
 def password_hash(password):
     if any(character in password for character in "\r\n\0"):
         raise ValueError("SUDO_PASSWORD must be a single line without null characters.")
@@ -47,10 +72,11 @@ def workflow_inputs(event):
     return event["inputs"]
 
 
-def server_address(inputs):
-    address = inputs.get("server_address", "")
+def server_address(address):
     if not isinstance(address, str) or not address:
         raise ValueError("Provide the server IP address or hostname.")
+    if "%" in address and not re.fullmatch(r"[0-9a-fA-F:.]+%[A-Za-z0-9_.-]+", address):
+        raise ValueError("Provide a valid IPv6 scope identifier.")
     try:
         ipaddress.ip_address(address)
     except ValueError:
@@ -96,22 +122,17 @@ def load_inventory():
     return inventory
 
 
-def resolve_target(event):
-    inputs = workflow_inputs(event)
-    address = server_address(inputs)
-    password = inputs.get("bootstrap_password", "")
-    validate_bootstrap_password(password)
-    inventory = load_inventory()
-    hostvars = inventory.get("_meta", {}).get("hostvars", {})
+def resolve_target(address, user):
     matches = [
-        (name, hostvars.get(name, {})) for name in development_hosts(inventory)
-        if address == name or address == hostvars.get(name, {}).get("ansible_host")
+        (name, variables) for name, variables in inventory_targets(load_inventory()).values()
+        if address in (name, variables["ansible_host"])
     ]
     if len(matches) > 1:
-        raise ValueError("The server address matches multiple inventory entries; use a unique hostname.")
-    name, saved = matches[0] if matches else ("dev01", {})
-    address = server_address({"server_address": saved.get("ansible_host", address)})
-    return name, {**saved, "ansible_host": address}
+        account_matches = [match for match in matches if match[1]["sudo_user"] == user]
+        if len(account_matches) != 1:
+            raise ValueError("The server address matches multiple inventory entries; use a unique hostname and sudo user.")
+        return account_matches[0]
+    return matches[0] if matches else ("dev01", {"ansible_host": server_address(address)})
 
 
 def development_hosts(inventory):
@@ -127,25 +148,45 @@ def development_hosts(inventory):
     return sorted(hosts)
 
 
+def inventory_targets(inventory):
+    hostvars = inventory.get("_meta", {}).get("hostvars", {})
+    targets = {}
+    for entry in development_hosts(inventory):
+        user, separator, name = entry.partition("@")
+        if not separator:
+            raise ValueError("Use sudo_user@hostname for each development inventory entry.")
+        validate_sudo_user(user)
+        variables = hostvars.get(entry, {})
+        # An alias may contain underscores when ansible_host provides the address.
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name):
+            server_address(name)
+        address = server_address(variables.get("ansible_host", name))
+        targets[entry] = (name, {**variables, "ansible_host": address, "sudo_user": user})
+    return targets
+
+
+def ssh_port(value):
+    try:
+        port = int(str(value))
+    except ValueError:
+        raise ValueError("ANSIBLE_SSH_PORT must be an integer from 1 to 65535.") from None
+    if not 1 <= port <= 65535:
+        raise ValueError("ANSIBLE_SSH_PORT must be an integer from 1 to 65535.")
+    return port
+
+
 def prepare_environment(event, environment):
     inputs = workflow_inputs(event)
-    address = server_address(inputs)
+    address = server_address(inputs.get("server_address"))
 
     bootstrap_user = inputs.get("bootstrap_user") or "root"
     if not isinstance(bootstrap_user, str) or not re.fullmatch(r"[a-z_][a-z0-9_-]*", bootstrap_user):
         raise ValueError("Provide a valid initial administrator username.")
     validate_bootstrap_password(inputs.get("bootstrap_password", ""))
-    try:
-        port = int(environment.get("DEPLOY_SSH_PORT") or "22")
-    except ValueError:
-        raise ValueError("ANSIBLE_SSH_PORT must be an integer from 1 to 65535.") from None
-    if not 1 <= port <= 65535:
-        raise ValueError("ANSIBLE_SSH_PORT must be an integer from 1 to 65535.")
+    port = ssh_port(environment.get("DEPLOY_SSH_PORT") or "22")
 
     env = environment.copy()
-    sudo_user = env.pop("DEPLOY_SUDO_USER", "")
-    if not isinstance(sudo_user, str) or not re.fullmatch(r"[a-z_][a-z0-9_-]*", sudo_user) or sudo_user == "root":
-        raise ValueError("Set SUDO_USER to a valid non-root account name in the development environment.")
+    sudo_user = validate_sudo_user(inputs.get("sudo_user", "dev"))
     sudo_password = env.pop("SUDO_PASSWORD", "")
     if not sudo_password:
         raise ValueError("Set the SUDO_PASSWORD environment secret for development-user sudo.")
@@ -155,7 +196,7 @@ def prepare_environment(event, environment):
     if initial_password == sudo_password:
         raise ValueError("The bootstrap password was also supplied as SUDO_PASSWORD. Rotate the exposed password before retrying.")
     if not env.get("DEPLOY_SSH_PRIVATE_KEY"):
-        raise ValueError("Set SUDO_PRIVATE_KEY for the development user's deployment key.")
+        raise ValueError("Set ANSIBLE_SSH_PRIVATE_KEY for the development user's deployment key.")
     if not env.get("DEPLOY_KNOWN_HOSTS"):
         raise ValueError("Set verified ANSIBLE_KNOWN_HOSTS entries for the server.")
 
@@ -168,13 +209,18 @@ def prepare_environment(event, environment):
     if environment.get("DOPPLER_TOKEN"):
         env["DEPLOY_DOPPLER_TOKEN"] = environment["DOPPLER_TOKEN"]
 
+    personal_key, _ = personal_public_key(inputs.get("user_public_key", ""))
+    runner_key = public_key(env["DEPLOY_SSH_PRIVATE_KEY"])
+    keys = [runner_key]
+    if personal_key and personal_key.split() != runner_key.split()[:2]:
+        keys.append(personal_key)
     host = {
         "ansible_host": address,
         "ansible_port": port,
         "sudo_user": sudo_user,
         "dev_host_bootstrap_user": bootstrap_user,
         "dev_host_ssh_port": port,
-        "dev_host_authorized_keys": [public_key(env["DEPLOY_SSH_PRIVATE_KEY"])],
+        "dev_host_authorized_keys": keys,
     }
     inventory = {"all": {"children": {"development": {"hosts": {"dev01": host}}}}}
     env.update({"DEPLOY_HOST": "dev01", "DEPLOY_INVENTORY": json.dumps(inventory)})
@@ -226,9 +272,10 @@ def configure_server(env, initial_password):
 
 
 def prepare_inventory_environment(name, variables, environment, inputs=None):
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name):
-        raise ValueError("Inventory entries must use exact hostnames, without patterns or SSH options.")
-    host_inputs = {**(inputs or {}), "server_address": variables.get("ansible_host", name)}
+    # A temporary inventory contains one host. IPv6 colons are Ansible pattern syntax.
+    alias = "dev01" if ":" in name else name
+    host_inputs = {"sudo_user": variables["sudo_user"]} if inputs is None else inputs.copy()
+    host_inputs["server_address"] = variables.get("ansible_host", name)
     env = prepare_environment({"inputs": host_inputs}, {
         **environment,
         "DEPLOY_SSH_PORT": str(variables.get("ansible_port", environment.get("DEPLOY_SSH_PORT") or "22")),
@@ -239,24 +286,23 @@ def prepare_inventory_environment(name, variables, environment, inputs=None):
     if inputs is None:
         host.pop("dev_host_bootstrap_user", None)
     host.pop("bootstrap_password_secret", None)
-    env["DEPLOY_HOST"] = name
-    env["DEPLOY_INVENTORY"] = json.dumps({"all": {"children": {"development": {"hosts": {name: host}}}}})
+    env["DEPLOY_HOST"] = alias
+    env["DEPLOY_INVENTORY"] = json.dumps({"all": {"children": {"development": {"hosts": {alias: host}}}}})
     return env
 
 
 def update_inventory(environment):
-    inventory = load_inventory()
-    names = development_hosts(inventory)
-    if not names:
+    inventory = inventory_targets(load_inventory())
+    if not inventory:
         message = "No enabled servers in the development inventory; nothing to configure."
         print(f"::notice::{message}", flush=True)
         if environment.get("GITHUB_STEP_SUMMARY"):
             with open(environment["GITHUB_STEP_SUMMARY"], "a") as report:
                 report.write(message + "\n")
         return 0
-    hostvars = inventory.get("_meta", {}).get("hostvars", {})
     # Validate all targets and required settings before changing any server.
-    targets = [(name, prepare_inventory_environment(name, hostvars.get(name, {}), environment)) for name in names]
+    targets = [(entry, prepare_inventory_environment(name, variables, environment))
+               for entry, (name, variables) in inventory.items()]
     results = []
     for name, env in targets:
         print(f"Checking SSH and sudo access for {name}.", flush=True)
@@ -293,14 +339,40 @@ def update_inventory(environment):
     return int(any(result.startswith("Failed:") for _, result in results))
 
 
-def main(*, update_only=False):
+def upload_public_key(inputs, environment):
+    user = inputs.get("username")
+    if not isinstance(user, str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*\$?", user):
+        raise ValueError("Provide the SSH username for the existing account.")
+    key, fingerprint = personal_public_key(inputs.get("user_public_key", ""))
+    if not key:
+        raise ValueError("The upload requires a public key in user_public_key.")
+    _, target = resolve_target(inputs.get("server_address"), user)
+    host = {
+        "ansible_host": target["ansible_host"],
+        "ansible_user": user,
+        "ansible_port": ssh_port(target.get("ansible_port", environment.get("DEPLOY_SSH_PORT") or "22")),
+        "user_public_key": key,
+        "user_key_fingerprint": fingerprint,
+    }
+    env = {name: environment[name] for name in (
+        "PATH", "HOME", "LANG", "RUNNER_TEMP", "ANSIBLE_CONFIG", "ANSIBLE_COLLECTIONS_PATH",
+        "ANSIBLE_LOCAL_TEMP", "DEPLOY_SSH_PRIVATE_KEY", "DEPLOY_KNOWN_HOSTS",
+    ) if name in environment}
+    env["DEPLOY_HOST"] = "upload_target"
+    env["DEPLOY_INVENTORY"] = json.dumps({"development": {"hosts": {"upload_target": host}}})
+    return run_playbook(env, "upload-public-key").returncode
+
+
+def main(*, update_only=False, upload_key=False):
     try:
         if update_only:
             return update_inventory(dict(os.environ))
         with open(os.environ["GITHUB_EVENT_PATH"]) as event_file:
             event = json.load(event_file)
         inputs = workflow_inputs(event)
-        name, variables = resolve_target(event)
+        if upload_key:
+            return upload_public_key(inputs, os.environ)
+        name, variables = resolve_target(inputs.get("server_address"), validate_sudo_user(inputs.get("sudo_user", "dev")))
         initial_password = inputs.get("bootstrap_password", "")
         env = prepare_inventory_environment(name, variables, dict(os.environ), inputs=inputs)
         return configure_server(env, initial_password)
@@ -313,6 +385,7 @@ def main(*, update_only=False):
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] not in ([], ["--update-inventory"]):
+    args = sys.argv[1:]
+    if args not in ([], ["--update-inventory"], ["--upload-public-key"]):
         raise SystemExit("Unsupported workflow runner argument.")
-    raise SystemExit(main(update_only=bool(sys.argv[1:])))
+    raise SystemExit(main(update_only=args == ["--update-inventory"], upload_key=args == ["--upload-public-key"]))

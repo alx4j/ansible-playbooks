@@ -17,8 +17,10 @@ Keep your development environment on a VPS and pick up the same terminal from yo
 
 1. **Bring a reachable VPS.** Fork this repository or use a copy you administer. Use Debian or Ubuntu with Python 3, OpenSSH, APT, and systemd. The roles support AMD64 and ARM64. CI exercises Debian 13 and Ubuntu 24.04 on AMD64. Keep access to the provider console while setting up SSH.
 2. **Choose your projects and integrations.** The defaults sync repositories owned by `alx4j` and install that owner's Codex toolkit. For your own VPS, choose your GitHub owner and topic or turn off these integrations. Both enabled integrations need a GitHub credential in Doppler. [Setup choices](docs/github-deployment.md#choose-what-to-install)
-3. **Run Bootstrap VPS.** Save the development account, deployment key, sudo password, and trusted host keys in GitHub. Then open **Actions → Bootstrap VPS → Run workflow**. GitHub runs Ansible for you. [GitHub walkthrough](docs/github-deployment.md) · [Local alternative](docs/development.md#prepare-the-controller)
+3. **Run Bootstrap VPS.** Save the runner key as `ANSIBLE_SSH_PRIVATE_KEY`, the sudo password, and trusted host keys in GitHub. Open **Actions → Bootstrap VPS → Run workflow**, choose the sudo username (default `dev`), and optionally supply your workstation’s public SSH key. GitHub runs Ansible for you. [GitHub walkthrough](docs/github-deployment.md) · [Local alternative](docs/development.md#prepare-the-controller)
 4. **Finish the account setup over SSH.** Sign in to Codex, authorize ClickUp in your browser, pair Moshi if you use a phone, and review TokenEconomizer's hooks. [First-login checklist](docs/first-login.md)
+
+To add a workstation key later, run **Actions → Upload public SSH key** for the existing username and host. Register automatic update targets as `user@hostname` in the [development inventory](inventories/development/hosts.yml).
 
 ## Open your first workspace
 
@@ -36,7 +38,7 @@ Pick a project in the sidebar and run `codex` or your usual build command. Press
 | I want to… | Guide |
 | --- | --- |
 | Choose a Java version, projects folder, SSH port, or firewall policy | [Host configuration](docs/configuration.md#common-host-overrides) |
-| Add projects, find an archived checkout, or change the GitHub owner | [Work repositories](docs/work-repositories.md) |
+| Add projects, recover an older archive, or change the GitHub owner | [Work repositories](docs/work-repositories.md) |
 | Use a secret from a terminal or rotate the server's access | [Doppler](docs/doppler.md) |
 | Change the skills Codex installs or edit global instructions | [Codex toolkit](docs/agent-toolkit.md) |
 | Adjust tool pruning or repeated-failure prompts | [TokenEconomizer](docs/tokeneconomizer.md) |
