@@ -5,6 +5,10 @@
 - name: Verify replacement administrative access
   ansible.builtin.import_tasks: access.yml
 
+- name: Finish a pending handoff on a key-authenticated deployment
+  ansible.builtin.import_tasks: finish_bootstrap_password.yml
+  when: dev_host_finish_bootstrap_password | default(false) | bool
+
 - name: Install the combined system package set
   ansible.builtin.apt:
     name: "{{ dev_host_base_packages }}"

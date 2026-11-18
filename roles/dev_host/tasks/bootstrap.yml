@@ -2,6 +2,10 @@
 - name: Validate bootstrap inputs
   ansible.builtin.import_tasks: preflight.yml
 
+- name: Remember an initial password used by the deployment workflow
+  ansible.builtin.import_tasks: record_bootstrap_password.yml
+  when: dev_host_record_bootstrap_password | default(false) | bool
+
 - name: Install administrative tools
   ansible.builtin.apt:
     name:

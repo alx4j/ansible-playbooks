@@ -17,7 +17,7 @@ on:
         type: string
         required: false
       bootstrap_password:
-        description: Bootstrap password (SSH and sudo)
+        description: Temporary initial account password (retained in event data, locked on the VPS after key handoff)
         type: string
         required: false
 
@@ -81,7 +81,7 @@ jobs:
           PROJECTS_TOPIC: ${{ vars.PROJECTS_TOPIC }}
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
-          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.SUDO_PRIVATE_KEY }}
           DEPLOY_SUDO_USER: ${{ vars.SUDO_USER }}
           SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
@@ -95,7 +95,7 @@ jobs:
           PROJECTS_TOPIC: ${{ vars.PROJECTS_TOPIC }}
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
-          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.SUDO_PRIVATE_KEY }}
           DEPLOY_SUDO_USER: ${{ vars.SUDO_USER }}
           SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}

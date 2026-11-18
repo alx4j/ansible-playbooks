@@ -40,7 +40,7 @@ The example assumes SSH already listens on port `2222`. Host-specific settings w
 
 | Situation | What to supply |
 | --- | --- |
-| Fresh host via Actions | The initial admin account for bootstrap. Separately, set `SUDO_PASSWORD` for the development account in the GitHub environment. |
+| Fresh host via Actions | A separate initial admin account for bootstrap. If you use its password, the workflow locks it after verifying development access. Set `SUDO_PASSWORD` for the development account in the GitHub environment. |
 | Existing development account | Its current sudo password. Bootstrap sets a salted password hash only when it creates an account. |
 | Local bootstrap with password-based sudo | A SHA-512 crypt or yescrypt hash through `SUDO_PASSWORD_HASH`. If using Doppler, resolve the name from your integrations mapping and inject it with the wrapper. Keep it out of shell history and command arguments. |
 | Routine local run | Use `--ask-become-pass` to enter the development user's sudo password. |

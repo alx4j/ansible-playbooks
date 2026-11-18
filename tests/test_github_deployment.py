@@ -141,6 +141,13 @@ class GitHubDeploymentTests(unittest.TestCase):
         host = json.loads(env["DEPLOY_INVENTORY"])["all"]["children"]["development"]["hosts"]["dev01"]
         self.assertEqual(host["dev_host_bootstrap_user"], "root")
 
+    def test_password_handoff_requires_separate_accounts_and_passwords(self):
+        for inputs in ({"bootstrap_user": self.env["DEPLOY_SUDO_USER"]},
+                       {"bootstrap_password": self.env["SUDO_PASSWORD"]}):
+            with self.subTest(field=next(iter(inputs))), self.assertRaises(ValueError):
+                DEPLOY.prepare_environment({"inputs": {**self.event["inputs"], **inputs}}, self.env)
+        self.key.assert_not_called()
+
     def test_rejects_unsafe_or_malformed_inputs_before_key_processing(self):
         cases = {
             "server_address": ["", "user@host", "host:22", "$(id)", "host\nother", "--help", [], "a" * 64, "host.."],
@@ -536,6 +543,7 @@ class WorkflowMaskingTests(unittest.TestCase):
         self.assertNotIn("DEPLOY_BOOTSTRAP_SECRET", env)
         for step in job["steps"]:
             if "python3 scripts/github-deploy.py" in step.get("run", ""):
+                self.assertEqual(step["env"]["DEPLOY_SSH_PRIVATE_KEY"], "${{ secrets.SUDO_PRIVATE_KEY }}")
                 self.assertEqual(step["env"]["PROJECTS_DIR"], "${{ vars.PROJECTS_DIR }}")
                 self.assertEqual(step["env"]["PROJECTS_TOPIC"], "${{ vars.PROJECTS_TOPIC }}")
 

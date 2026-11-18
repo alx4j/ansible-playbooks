@@ -3,6 +3,12 @@
   hosts: development
   gather_facts: false
   tasks:
+    - name: Record a pending password handoff for password-authenticated bootstrap
+      ansible.builtin.import_role:
+        name: dev_host
+        tasks_from: record_bootstrap_password
+      when: dev_host_record_bootstrap_password | default(false) | bool
+
     - name: Apply the production account tasks over SSH
       ansible.builtin.import_role:
         name: dev_host
