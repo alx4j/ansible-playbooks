@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -138,6 +139,12 @@ class Installer:
             if any(configured.get(key) != value for key, value in self.settings.items()):
                 raise InstallError("TokenEconomizer did not retain the requested global settings.")
             self.report.update(changed=True, settings_updated=True)
+
+        # The upstream writer replaces this file. A default ACL can override its umask.
+        with os.fdopen(os.open(config, os.O_RDONLY | os.O_NOFOLLOW), "rb") as stream:
+            if stat.S_IMODE(os.fstat(stream.fileno()).st_mode) != 0o600:
+                os.fchmod(stream.fileno(), 0o600)
+                self.report["changed"] = True
         return self.report
 
     def run(self):

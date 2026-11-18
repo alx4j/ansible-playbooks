@@ -89,6 +89,16 @@ installed_time = (CACHE / ".codex-plugin/plugin.json").stat().st_mtime_ns
 assert not reconcile()["changed"]
 assert (CACHE / ".codex-plugin/plugin.json").stat().st_mtime_ns == installed_time
 
+# A mode-only repair preserves the config bytes and leaves subsequent runs unchanged.
+original_config = CONFIG.read_bytes()
+CONFIG.chmod(0o640)
+repair = reconcile()
+assert repair["changed"] and not repair["settings_updated"] and not repair["package_updated"], repair
+assert CONFIG.read_bytes() == original_config and CONFIG.stat().st_mode & 0o777 == 0o600
+assert not reconcile()["changed"]
+
+# A default ACL would grant group read access when upstream replaces the file.
+command("setfacl", "-d", "-m", "g::r-x", STATE)
 # Per-project settings and learned data survive global configuration changes.
 repository_state = STATE / "repos/ansible-preservation-fixture"
 repository_state.mkdir(parents=True)
@@ -100,6 +110,7 @@ saved["codex_paid_model"] = "fixture-model"
 CONFIG.write_text(json.dumps(saved))
 result = reconcile("--microskills", "on", "--toolprune", "propose", "--loopguard", "off")
 assert result["settings_updated"] and not result["package_updated"]
+assert CONFIG.stat().st_mode & 0o777 == 0o600
 configured = json.loads(CONFIG.read_text())
 assert configured == {**saved, "microskills": "envfacts+distiller", "toolprune": "propose", "loopguard": "off"}
 assert not reconcile("--microskills", "on", "--toolprune", "propose", "--loopguard", "off")["changed"]
