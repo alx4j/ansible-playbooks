@@ -17,6 +17,9 @@ export PROJECTS_DIR=work-projects
 vm_dir="$(mktemp -d "$RUNNER_TEMP/ansible-vm.XXXXXX")"
 trap 'rm -rf -- "$vm_dir"' EXIT
 
+# Install the hosted image's pending unattended upgrades in one dpkg transaction.
+# The fixture waits for both real APT services before recording its baseline.
+printf '%s\n' 'Unattended-Upgrade::MinimalSteps "false";' | sudo tee /etc/apt/apt.conf.d/99ansible-vm-test > /dev/null
 sudo apt-get update -qq
 sudo apt-get install -y --no-install-recommends openssh-server sudo acl
 # Hosted images set per-user XDG paths globally, including for SSH logins.
@@ -61,6 +64,8 @@ run_tool_test tests/prepare-tools.py
 # Synthetic credential only: PR jobs never receive deployment secrets.
 export DOPPLER_TOKEN=ansible-fixture-one
 ansible-playbook -i "$vm_dir/inventory.json" site.yml
+# The workspace fixture only needs the first install and cleans up its own session.
+sudo env "PATH=$PATH" python3 tests/project-workspaces.py
 # Persistent APT timers can catch up immediately and restart services after
 # library upgrades. Finish that initial work before measuring convergence.
 sudo env "PATH=$PATH" python3 tests/wait-apt.py
@@ -98,7 +103,6 @@ run_tool_test tests/java-shell.py
 run_tool_test tests/toolchain-shell.py
 run_tool_test tests/herdr.py
 run_tool_test tests/herdr.py --cleanup
-sudo env "PATH=$PATH" python3 tests/project-workspaces.py
 sudo env "PATH=$PATH" python3 tests/vm-state.py | tee "$vm_dir/state-after.json" > /dev/null
 if ! diff -u "$vm_dir/state-before.json" "$vm_dir/state-after.json"; then
   sudo journalctl -u doppler-secrets.service -u apt-daily.service -u apt-daily-upgrade.service --lines=60 --no-pager
