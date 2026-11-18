@@ -21,6 +21,7 @@
     repo: "{{ agent_toolkit_repository }}"
     dest: "{{ agent_toolkit_checkout }}"
     version: main
+    clone: false
     update: true
     force: false
     recursive: false
