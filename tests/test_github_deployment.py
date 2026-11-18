@@ -543,6 +543,7 @@ class WorkflowMaskingTests(unittest.TestCase):
         self.assertNotIn("DEPLOY_BOOTSTRAP_SECRET", env)
         for step in job["steps"]:
             if "python3 scripts/github-deploy.py" in step.get("run", ""):
+                self.assertEqual(step["env"]["DEPLOY_SSH_PRIVATE_KEY"], "${{ secrets.SUDO_PRIVATE_KEY }}")
                 self.assertEqual(step["env"]["PROJECTS_DIR"], "${{ vars.PROJECTS_DIR }}")
                 self.assertEqual(step["env"]["PROJECTS_TOPIC"], "${{ vars.PROJECTS_TOPIC }}")
 

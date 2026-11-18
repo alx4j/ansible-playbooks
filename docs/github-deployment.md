@@ -23,7 +23,7 @@ Both integrations fetch `GITHUB_TOKEN` from the VPS's Doppler service and use SS
 | --- | --- | --- |
 | `SUDO_USER` | Variable | Non-root development account to create or reuse for daily SSH and sudo. |
 | `SUDO_PASSWORD` | Secret | Sudo password for that account. Choose it for a new account or supply the current one. Use a single line of up to 256 UTF-8 bytes. |
-| `ANSIBLE_SSH_PRIVATE_KEY` | Secret | Dedicated, unencrypted deployment key. Bootstrap installs the public half for the development user. |
+| `SUDO_PRIVATE_KEY` | Secret | Dedicated, unencrypted deployment key. Bootstrap installs the public half for the development user. |
 | `ANSIBLE_KNOWN_HOSTS` | Variable | Verified OpenSSH host-key entries for the addresses the runner connects to. Use `[hostname]:port` for a nondefault port. Verify the key through the provider console or another trusted channel. |
 | `DOPPLER_TOKEN` | Secret | Read-only service token for the Doppler config this VPS should use. Needed when provisioning Doppler for the default integrations. |
 | `ANSIBLE_SSH_PORT` | Optional variable | Existing SSH port, default `22`. The runner must be able to reach it. |

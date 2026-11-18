@@ -155,7 +155,7 @@ def prepare_environment(event, environment):
     if initial_password == sudo_password:
         raise ValueError("The bootstrap password was also supplied as SUDO_PASSWORD. Rotate the exposed password before retrying.")
     if not env.get("DEPLOY_SSH_PRIVATE_KEY"):
-        raise ValueError("Set ANSIBLE_SSH_PRIVATE_KEY for the development user's deployment key.")
+        raise ValueError("Set SUDO_PRIVATE_KEY for the development user's deployment key.")
     if not env.get("DEPLOY_KNOWN_HOSTS"):
         raise ValueError("Set verified ANSIBLE_KNOWN_HOSTS entries for the server.")
 

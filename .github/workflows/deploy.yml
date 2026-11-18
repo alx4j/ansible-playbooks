@@ -81,7 +81,7 @@ jobs:
           PROJECTS_TOPIC: ${{ vars.PROJECTS_TOPIC }}
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
-          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.SUDO_PRIVATE_KEY }}
           DEPLOY_SUDO_USER: ${{ vars.SUDO_USER }}
           SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
@@ -95,7 +95,7 @@ jobs:
           PROJECTS_TOPIC: ${{ vars.PROJECTS_TOPIC }}
           DEPLOY_KNOWN_HOSTS: ${{ vars.ANSIBLE_KNOWN_HOSTS }}
           DEPLOY_SSH_PORT: ${{ vars.ANSIBLE_SSH_PORT }}
-          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.SUDO_PRIVATE_KEY }}
           DEPLOY_SUDO_USER: ${{ vars.SUDO_USER }}
           SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
