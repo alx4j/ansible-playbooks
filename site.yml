@@ -7,6 +7,8 @@
   serial: 1
   roles:
     - role: dev_host
+    - role: tokeneconomizer
+      when: tokeneconomizer_enabled | bool
     - role: doppler_secrets
       when: doppler_secrets_enabled | bool
       doppler_secrets_install_skill: "{{ not (agent_toolkit_enabled | bool) }}"

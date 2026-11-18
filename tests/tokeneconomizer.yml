@@ -1,0 +1,10 @@
+---
+- name: Exercise TokenEconomizer in a disposable account
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    dev_host_user: ansibletest
+    dev_host_home: /home/ansibletest
+  roles:
+    - role: tokeneconomizer

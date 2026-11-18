@@ -1,0 +1,9 @@
+---
+tokeneconomizer_enabled: true
+tokeneconomizer_user: "{{ dev_host_user }}"
+tokeneconomizer_home: "{{ dev_host_home }}"
+tokeneconomizer_revision: 12468f4415cae02bb800f988f394744fc79911e3
+# Keep upstream defaults; repository overrides still take precedence.
+tokeneconomizer_microskills: "off"
+tokeneconomizer_toolprune: auto
+tokeneconomizer_loopguard: nudge

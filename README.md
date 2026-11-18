@@ -12,13 +12,17 @@ The [Codex toolkit](docs/agent-toolkit.md) installs the personal plugins and
 global instructions from a separate managed checkout. Ansible updates that
 checkout from toolkit `main` on each run, preserving your editable project copy.
 
+[TokenEconomizer](docs/tokeneconomizer.md) is installed separately for Codex, with
+repository-specific state and configurable cost-control features.
+
 The managed host needs Debian/Ubuntu, Python 3, OpenSSH, APT, and systemd. The configuration supports AMD64 and ARM64; tests exercise Debian 13 containers and an Ubuntu 24.04 VM on AMD64. GitHub Actions provides the controller, so you do not need Ansible installed on your workstation.
 
 ## Run through GitHub Actions
 
 1. Follow [workflow setup](docs/github-deployment.md#1-configure-the-environment) to save the `SUDO_USER` variable, SSH private key, `SUDO_PASSWORD` secret, and trusted host keys in the `development` GitHub environment. List managed servers in the [development inventory](inventories/development/hosts.yml).
 2. Open **Actions → Bootstrap VPS → Run workflow**. Enter the server address and its initial username and password. One run creates the configured account when needed, verifies its key and sudo access, and configures the server. For `dev.alx4j.com`, the initial username is `debian`.
-3. Merge later configuration changes to `main`. After validation passes, **Bootstrap VPS** updates inventory servers with working development-account access. It warns and skips servers without that access; first setup remains manual.
+3. Complete [account onboarding](docs/configuration.md#account-onboarding): log in to Codex, run Moshi's QR pairing from your terminal, and review TokenEconomizer's hooks.
+4. Merge later configuration changes to `main`. After validation passes, **Bootstrap VPS** updates inventory servers with working development-account access. It warns and skips servers without that access; first setup remains manual.
 
 You can also rerun a single server manually with just its address once development-account access works. Pull requests run validation without contacting inventory servers. Keep provider-console access available when changing SSH or sudo.
 
@@ -41,6 +45,7 @@ The setup workflow runs these stages automatically. They are also available for 
 - [Herdr and Moshi](docs/herdr.md): persistent workspaces, phone pairing, session discovery, and automatic window titles.
 - [Work repositories](docs/work-repositories.md): topic selection, GitHub SSH access, and safe archive/restore behavior.
 - [Codex toolkit](docs/agent-toolkit.md): managed plugins, global instructions, updates, and the separate development checkout.
+- [TokenEconomizer](docs/tokeneconomizer.md): pinned Codex plugin, hook approval, repository learning, and tool-pruning settings.
 - [Setup history](ansible.md): the historical commands that informed these playbooks.
 
 ## Repository map

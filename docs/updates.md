@@ -25,6 +25,7 @@ References: [Dependabot options](https://docs.github.com/en/code-security/refere
 | Java | The exact `dev_host_java_version` SDKMAN identifier; change the jenv alias when changing Java majors. |
 | jenv | `dev_host_jenv_revision`, using a reviewed release commit. |
 | Gradle, Codex | Their `dev_host_*_version` values; check CLI compatibility and installer checksums where applicable. |
+| TokenEconomizer | `tokeneconomizer_revision` in its role defaults; review the commit and verify the bundle and hooks with pinned Codex. |
 | Moshi | No version pin. Fresh installs use the current release with checksum verification; existing installations keep their updater and settings. |
 | Herdr | `dev_host_herdr_version` and both Linux SHA-256 values in `dev_host_herdr_checksums`, from the [official release manifest](https://herdr.dev/latest.json). |
 | Herdr window titles | `dev_host_herdr_title_sync_revision`, using a reviewed commit from `rjyo/herdr-window-title-sync`. |

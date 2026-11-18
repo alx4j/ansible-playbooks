@@ -82,6 +82,11 @@ Both paths install pinned dependencies through `scripts/setup` and run `scripts/
 
 `scripts/github-deploy.py` creates a temporary inventory for exactly one server at each stage. `scripts/deploy` checks syntax and target selection, enforces host-key checking, and uses separate SSH control directories so earlier connections cannot bypass authentication. Passwords are never passed as command arguments. Credential files use mode `0600` inside a `0700` temporary directory, removed on exit and ordinary cancellation. Initial credentials and the account-creation hash are excluded from routine Ansible subprocesses.
 
-Manual account creation derives a salted SHA-512 crypt hash from `SUDO_PASSWORD` through OpenSSL stdin. The account uses `update_password: on_create`, preserving existing passwords. Codex/ClickUp login and Moshi pairing remain [interactive onboarding](configuration.md#account-onboarding).
+Manual account creation derives a salted SHA-512 crypt hash from `SUDO_PASSWORD` through OpenSSL stdin. The account uses `update_password: on_create`, preserving existing passwords. Codex/ClickUp login, Moshi QR pairing, and TokenEconomizer hook approval remain [interactive onboarding](configuration.md#account-onboarding).
+
+After bootstrap succeeds, connect as the development account and run
+`moshi-hook host setup`, then scan the terminal's QR using **Easy Pair** in the
+Moshi app. The QR grants temporary SSH access and is never printed by the
+workflow. See [the pairing steps](configuration.md#pair-moshi-with-the-qr-code).
 
 See [verification](development.md#verification) for test coverage and limits. GitHub documents [workflow completion triggers](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run), [manual inputs](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs), and [concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
