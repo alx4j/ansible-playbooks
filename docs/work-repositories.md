@@ -23,6 +23,31 @@ Topic edits do not trigger the workflow themselves. Run **Bootstrap VPS**
 manually or wait for the next validated `main` update. Every enabled inventory
 server receives the same selection unless its role settings override it.
 
+## Project workspaces
+
+After synchronizing repositories, the helper ensures a Herdr workspace for each
+owned checkout still selected by the topic. This includes existing clones and
+restored projects. It starts the development account's `default` Herdr session
+in the background when needed, and reuses a running server without restarting it.
+An empty project selection does not start Herdr.
+
+New workspaces use the checkout directory name as their label and start a shell
+in that directory. They do not start Codex or switch focus away from your current
+workspace. Existing workspaces are matched by Herdr's saved checkout identity,
+so custom labels, tabs, panes, and shells that have changed directory are preserved.
+Other workspaces are left alone. Herdr opens the existing checkout; it does not
+create a linked Git worktree or change the repository's branch.
+
+Connect with `herdr` or select the session in Moshi. If you close a workspace
+while its repository still has the topic, the next sync recreates it. To archive
+a project, remove its topic and close its workspace first. Open workspaces still
+block archival; synchronization never closes them automatically.
+
+Workspace failures fail the run without undoing successful clones. Fix Herdr and
+rerun to fill in missing workspaces. After a reboot, open Herdr or rerun sync to
+start the server and restore its saved layout; running processes do not survive
+the reboot. See [Herdr and Moshi](herdr.md).
+
 ## GitHub access
 
 Keep the existing `DOPPLER_TOKEN` in GitHub's `development` environment. Its
@@ -86,9 +111,13 @@ Discovery must finish every page before any repository operation begins.
 
 Moves are skipped when the development account has a process working in the
 checkout or holding files open, a running Herdr session references it, or Git has
-linked worktrees. If activity cannot be inspected, the checkout stays put.
+linked worktrees. During sync, a root process checks the account's working
+directories and open file descriptors, including those of protected processes
+such as the systemd user manager. The sync worker runs as the development
+account and receives only an activity result for a path under the projects
+directory. If inspection fails, the checkout stays put.
 These are conservative checks, not a lock against interactive users starting
-work afterward; close the workspace before removing its topic.
+work afterward; remove the topic and close the workspace before the next sync.
 
 Concurrent sync runs are locked. Clones are staged before publishing their
 directory, moves refuse to overwrite an existing destination, and pending moves
@@ -97,7 +126,8 @@ Submodules and Git LFS content are not initialized automatically.
 
 Changing `PROJECTS_DIR` selects a separate manifest and leaves the old directory
 and its state intact. The workflow reports cloned, kept, archived, restored, and
-skipped repositories. Failures remain failures.
+skipped repositories. Its `herdr` result reports the session, whether it started,
+and which project workspaces were created or kept. Failures remain failures.
 
 ## Settings
 
@@ -119,10 +149,14 @@ work_repositories_owner: alx4j
 work_repositories_topic: work
 work_repositories_github_secret: GITHUB_TOKEN  # Doppler secret name, never its value
 work_repositories_enabled: true
+work_repositories_herdr_session: default
 ```
 
 Setting `work_repositories_enabled: false` leaves existing checkouts, archives,
-and SSH keys untouched. With synchronization enabled, a working Doppler service
+SSH keys, and Herdr sessions untouched. Set `work_repositories_herdr_session` to
+use a different session, then connect with `herdr --session <name>`. Changing the
+session does not move or close workspaces in the old session.
+With synchronization enabled, a working Doppler service
 and selected GitHub credential are required; there is no anonymous or cached
 fallback.
 

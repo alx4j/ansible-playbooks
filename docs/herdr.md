@@ -5,7 +5,14 @@ development account alongside Moshi and its Codex hooks. Herdr keeps terminals
 running across SSH disconnects; Moshi lets you attach to those workspaces from
 your phone and receive agent events.
 
-## Start a workspace
+## Open a project workspace
+
+[Work-repository synchronization](work-repositories.md) creates a workspace for
+each managed project in the `default` session, including previously cloned
+projects. It starts that session's background server when needed. New workspaces
+start a shell in the checkout, with the directory name as their initial label;
+Codex is not launched automatically. Reruns preserve your custom labels, layouts,
+and current focus.
 
 After running **Bootstrap VPS**, connect over SSH as the configured development
 account and run:
@@ -15,8 +22,9 @@ cd "$PROJECTS_DIR"
 herdr
 ```
 
-This starts or attaches to the default session. Inside Herdr, create a workspace
-for an existing project directory:
+This starts or attaches to the default session. Select the project's workspace
+in the sidebar. For a manually cloned or otherwise unmanaged project, you can
+create a workspace yourself:
 
 ```bash
 herdr workspace create --cwd "$PROJECTS_DIR/my-project" --label my-project --focus
@@ -26,9 +34,12 @@ Run `codex` in that workspace. Press **Ctrl-B, Q** to detach while its processes
 keep running. Reconnect in Moshi and select the workspace from the Herdr tab.
 An empty picker usually means no Herdr server is running yet.
 
-Ansible installs Herdr and registers the title plugin without starting sessions,
-attaching automatically, or replacing your Herdr configuration. A repeat run
-preserves running sessions.
+Herdr installation and title-plugin registration do not start sessions or replace
+your Herdr configuration. Repository synchronization starts a background session
+only when it has managed projects to open; it never attaches a client automatically.
+A repeat run preserves running sessions. To use a named session for managed
+projects, set `work_repositories_herdr_session` and connect with
+`herdr --session <name>`.
 Replacing the binary during an upgrade does not restart an existing Herdr server;
 finish its work before stopping it with `herdr session stop default` and starting
 it again. Disconnect survival does not mean processes survive a server reboot.

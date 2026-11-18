@@ -5,11 +5,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import urllib.request
 
 
@@ -82,8 +83,61 @@ class WorkRepositoriesTests(unittest.TestCase):
         self.git.run("-C", path, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
                      "commit", "-qm", message)
 
-    def sync(self, activity=lambda *_: None):
-        return SYNC.Reconciler(self.home, self.projects, "fixture", "work", self.api, self.git, activity).run()
+    def sync(self, activity=lambda *_: None, herdr=None):
+        return SYNC.Reconciler(self.home, self.projects, "fixture", "work", self.api, self.git, activity, herdr).run()
+
+    def test_workspace_reconciliation_backfills_existing_and_includes_new_clones(self):
+        self.sync()
+        self.api.repositories.append(repository(2, "two"))
+        herdr = Mock()
+        herdr.reconcile.return_value = {"started": True, "created": ["fixture/one", "fixture/two"]}
+        result = self.sync(herdr=herdr)
+        self.assertTrue(result["changed"])
+        self.assertEqual(result["cloned"], ["fixture/two"])
+        herdr.reconcile.assert_called_once_with([
+            ("fixture/one", self.projects / "one"), ("fixture/two", self.projects / "two")])
+        herdr.reconcile.return_value = {"started": False, "created": []}
+        self.assertFalse(self.sync(herdr=herdr)["changed"])
+
+    def test_workspaces_exclude_unmanaged_changed_and_removed_repositories(self):
+        self.sync()
+        (self.projects / "two").mkdir()
+        self.api.repositories.append(repository(2, "two"))
+        self.git.run("-C", self.projects / "one", "remote", "set-url", "origin", "git@github.com:fixture/changed.git")
+        herdr = Mock()
+        herdr.reconcile.return_value = {"started": False, "created": []}
+        self.sync(herdr=herdr)
+        herdr.reconcile.assert_called_with([])
+        self.api.repositories[0]["topics"] = []
+        self.sync(herdr=herdr)
+        herdr.reconcile.assert_called_with([])
+
+    def test_removed_busy_checkout_does_not_get_a_replacement_workspace(self):
+        self.sync()
+        self.api.repositories[0]["topics"] = []
+        herdr = Mock()
+        herdr.reconcile.return_value = {"started": False, "created": []}
+        result = self.sync(activity=lambda *_: "active workspace", herdr=herdr)
+        self.assertTrue(result["skipped"])
+        herdr.reconcile.assert_called_once_with([])
+        self.assertEqual(self.sync(herdr=herdr)["archived"], ["fixture/one"])
+        herdr.reconcile.assert_called_with([])
+        self.api.repositories[0]["topics"] = ["work"]
+        self.assertEqual(self.sync(herdr=herdr)["restored"], ["fixture/one"])
+        herdr.reconcile.assert_called_with([("fixture/one", self.projects / "one")])
+
+    def test_workspace_failure_keeps_clone_and_retries_without_cloning_again(self):
+        herdr = Mock()
+        herdr.reconcile.side_effect = SYNC.SyncError("fixture Herdr failure")
+        with self.assertRaises(SYNC.SyncError):
+            self.sync(herdr=herdr)
+        self.assertTrue((self.projects / "one/.git").is_dir())
+        herdr.reconcile.side_effect = None
+        herdr.reconcile.return_value = {"started": False, "created": ["fixture/one"]}
+        with patch.object(self.git, "clone", side_effect=AssertionError("Unexpected clone")):
+            result = self.sync(herdr=herdr)
+        self.assertTrue(result["changed"])
+        self.assertEqual(result["cloned"], [])
 
     def manifest(self):
         return self.home / ".local/state/work-repositories/projects.json"
@@ -210,6 +264,21 @@ class WorkRepositoriesTests(unittest.TestCase):
         with (path / "tracked").open():
             self.assertIn("files open", SYNC.busy_reason(path, self.home))
 
+    def test_activity_reader_failure_preserves_checkout(self):
+        self.sync()
+        self.api.repositories[0]["topics"] = []
+        channel, reader = socket.socketpair(type=socket.SOCK_SEQPACKET)
+        with channel, reader:
+            reader.sendall(b"unexpected")
+            for disconnected in (False, True):
+                with self.subTest(disconnected=disconnected):
+                    if disconnected:
+                        reader.close()
+                    result = self.sync(activity=lambda path, home: SYNC.busy_reason(path, home, channel))
+                    self.assertEqual(result["skipped"], [{"repository": "fixture/one", "reason": SYNC.activity.UNKNOWN}])
+                    self.assertFalse(result["changed"])
+                    self.assertTrue((self.projects / "one/tracked").is_file())
+
     def test_origin_change_and_symlinks_preserve_everything(self):
         self.sync()
         path = self.projects / "one"
@@ -277,9 +346,9 @@ class WorkRepositoriesTests(unittest.TestCase):
         replies = [json.dumps({"sessions": [{"name": "work", "running": True}]}),
                    json.dumps({"result": {"workspaces": [{"worktree": None}]}}),
                    json.dumps({"result": {"panes": [{"foreground_cwd": str(path)}]}})]
-        with patch.object(SYNC, "process_activity", return_value=None), patch.object(SYNC.subprocess, "check_output", side_effect=replies):
+        with patch.object(SYNC.activity, "scan", return_value=None), patch.object(SYNC.subprocess, "check_output", side_effect=replies):
             self.assertIn("Herdr", SYNC.busy_reason(path, self.home))
-        with patch.object(SYNC, "process_activity", return_value=None), patch.object(SYNC.subprocess, "check_output", side_effect=OSError()):
+        with patch.object(SYNC.activity, "scan", return_value=None), patch.object(SYNC.subprocess, "check_output", side_effect=OSError()):
             self.assertIn("cannot verify", SYNC.busy_reason(path, self.home))
 
     def test_api_pagination_and_cross_origin_redirect_guard(self):
