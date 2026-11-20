@@ -1,0 +1,4 @@
+#!/bin/sh
+# Codex also starts MCP servers from non-login shells.
+export PATH={{ (dev_host_home ~ '/.local/bin:' ~ dev_host_home ~ '/.local/share/go/current/bin:' ~ dev_host_home ~ '/.cargo/bin') | quote }}:"$PATH"
+exec {{ (dev_host_home ~ '/.local/share/serena-venv/bin/serena') | quote }} "$@"

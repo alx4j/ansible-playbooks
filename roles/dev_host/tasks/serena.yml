@@ -6,10 +6,14 @@
     virtualenv_command: /usr/bin/python3 -m venv
 
 - name: Expose the Serena command to the development user
-  ansible.builtin.file:
-    src: "{{ dev_host_home }}/.local/share/serena-venv/bin/serena"
+  ansible.builtin.template:
+    src: serena.sh.j2
     dest: "{{ dev_host_home }}/.local/bin/serena"
-    state: link
+    mode: "0755"
+    follow: false
+
+- name: Provision Serena language servers
+  ansible.builtin.import_tasks: serena_languages.yml
 
 - name: Register the project-aware Serena MCP server
   vars:
