@@ -29,6 +29,7 @@ image="localhost/ansible-playbooks-test:local"
     runuser -u ansibletest -- python3 tests/toolchain-shell.py
     runuser -u ansibletest -- python3 tests/tokeneconomizer.py
     runuser -u ansibletest -- python3 tests/herdr.py
+    runuser -u ansibletest -- python3 tests/serena-registration.py
     runuser -u ansibletest -- python3 tests/herdr.py --cleanup
     python3 tests/project-workspaces.py
   '

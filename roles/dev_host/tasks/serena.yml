@@ -1,0 +1,36 @@
+---
+- name: Install the selected Serena release in a user-owned virtual environment
+  ansible.builtin.pip:
+    name: "serena-agent=={{ dev_host_serena_version }}"
+    virtualenv: "{{ dev_host_home }}/.local/share/serena-venv"
+    virtualenv_command: /usr/bin/python3 -m venv
+
+- name: Expose the Serena command to the development user
+  ansible.builtin.file:
+    src: "{{ dev_host_home }}/.local/share/serena-venv/bin/serena"
+    dest: "{{ dev_host_home }}/.local/bin/serena"
+    state: link
+
+- name: Register the project-aware Serena MCP server
+  vars:
+    dev_host_serena_command: "{{ dev_host_home }}/.local/bin/serena"
+    dev_host_serena_args: [start-mcp-server, --context, codex, --agent-interface, tools, --project-from-cwd, --open-web-dashboard, "false"]
+    dev_host_serena_server: >-
+      {{ (dev_host_mcp_servers.stdout | from_json | selectattr('name', 'equalto', 'serena')
+          | first) | default({}) }}
+  block:
+    - name: Read the development user's Codex MCP configuration
+      ansible.builtin.command:
+        argv: ["{{ dev_host_home }}/.local/bin/codex", mcp, list, --json]
+      register: dev_host_mcp_servers
+      changed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Configure Serena for Codex sessions in the active checkout
+      ansible.builtin.command:
+        argv: "{{ [dev_host_home ~ '/.local/bin/codex', 'mcp', 'add', 'serena', '--', dev_host_serena_command] + dev_host_serena_args }}"
+      when: >-
+        dev_host_serena_server.get('transport', {}).get('command') != dev_host_serena_command or
+        dev_host_serena_server.get('transport', {}).get('args') != dev_host_serena_args
+      changed_when: true

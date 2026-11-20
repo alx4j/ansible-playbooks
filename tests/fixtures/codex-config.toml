@@ -1,1 +1,4 @@
 # The application and hook installer own this file after initial seeding.
+
+[mcp_servers.bootstrap_fixture]
+command = "/bin/true"
