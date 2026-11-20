@@ -76,3 +76,5 @@ CI uses AMD64. Provider networking, phone pairing, live private GitHub or Dopple
 Bootstrap installs Serena for the development user and registers it with Codex. Start Codex in a project checkout and use `/mcp` to check the connection. The server selects the project from the session's working directory. If you start elsewhere, ask Codex to activate the checkout by its full path.
 
 Try “Where is this method implemented, and what calls it?” in a project with a working language server. For a literal such as a log message, ask which files contain it. The shared toolkit guidance uses Serena for symbols and `rg` for text.
+
+For Go, the launcher exposes the pinned Go toolchain and `gopls`. For Rust, bootstrap adds `rust-analyzer` and the standard-library source to the pinned toolchain. A project selecting its own Rust toolchain needs those components for that version. For Java, Serena manages Eclipse JDT LS and its own launch runtime on first use. Bootstrap registers the development JDK for project analysis and Gradle import, enables project Gradle wrappers, and preserves other registered JDKs and Serena settings.

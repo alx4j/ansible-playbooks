@@ -134,6 +134,7 @@ run_tool_test tests/java-shell.py
 run_tool_test tests/toolchain-shell.py
 run_tool_test tests/herdr.py
 run_tool_test tests/serena-registration.py
+sudo -u ansibletest -H /home/ansibletest/.local/share/serena-venv/bin/python tests/serena-navigation.py
 run_tool_test tests/herdr.py --cleanup
 sudo env "PATH=$PATH" python3 tests/vm-state.py | tee "$vm_dir/state-after.json" > /dev/null
 if ! diff -u "$vm_dir/state-before.json" "$vm_dir/state-after.json"; then

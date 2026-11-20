@@ -51,7 +51,8 @@ jobs:
   tools:
     name: Full host and toolchain tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # Cold language-server downloads and project indexing run on the same VM.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:

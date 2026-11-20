@@ -38,6 +38,7 @@ dev_host_jenv_java_alias: zulu-25
 # jenv 0.6.0, pinned to its release commit.
 dev_host_jenv_revision: a3db63d1e2f138acd3882858cd34fa9b0b88cd2c
 dev_host_gradle_version: "9.8.2"
+dev_host_gopls_version: "v0.24.0"
 dev_host_go_version: "1.27.4"
 dev_host_go_architectures:
   x86_64: amd64
