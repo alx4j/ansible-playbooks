@@ -34,7 +34,8 @@ def repo_info(value):
                  and isinstance(topics, list) and all(isinstance(topic, str) for topic in topics))
         if not valid:
             raise ValueError
-        return {"id": str(ident), "name": name, "repo": f"{owner}/{name}", "owner": owner, "topics": topics}
+        return {"id": str(ident), "name": name, "repo": f"{owner}/{name}", "owner": owner,
+                "topics": topics, "language": value.get("language")}
     except (KeyError, TypeError, ValueError):
         raise SyncError("GitHub returned incomplete or unsafe repository metadata.") from None
 
@@ -50,6 +51,29 @@ def discover(api, owner, topic):
         if repo["owner"].lower() == owner.lower() and topic in repo["topics"]:
             desired[repo["id"]] = repo
     return desired
+
+
+def initialize_serena(checkout, repo):
+    """Seed only fresh clones, while the checkout is still private to this sync."""
+    languages = {"Go": "go", "Java": "java", "Rust": "rust"}
+    primary = repo["language"]
+    if not isinstance(primary, str) or primary not in languages:
+        return
+    directory = checkout / ".serena"
+    # Git can supply a file or symlink here. Never follow it out of the clone.
+    if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+        return
+    directory.mkdir(exist_ok=True)
+    try:
+        with (directory / "project.yml").open("x", encoding="utf-8") as stream:
+            stream.write(f"project_name: {json.dumps(repo['name'])}\nlanguage_servers: [{languages[primary]}]\n")
+    except FileExistsError:
+        return
+    # Local bootstrap settings should not make a new clone appear dirty.
+    info = checkout / ".git/info"
+    info.mkdir(exist_ok=True)
+    with (info / "exclude").open("a", encoding="utf-8") as stream:
+        stream.write("\n/.serena/project.yml\n")
 
 
 def save_json(path, value):
@@ -299,6 +323,7 @@ class Reconciler:
         with tempfile.TemporaryDirectory(prefix=".work-repo-", dir=self.projects) as temporary:
             checkout = Path(temporary) / "checkout"
             self.git.clone(repo, checkout)
+            initialize_serena(checkout, repo)
             save_json(checkout / ".git/ansible-work-repository.json", {"id": ident})
             if destination.exists() or destination.is_symlink():
                 raise SyncError("A clone destination appeared during synchronization; it was not overwritten.")

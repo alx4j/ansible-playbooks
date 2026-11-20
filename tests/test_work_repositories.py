@@ -166,6 +166,45 @@ class WorkRepositoriesTests(unittest.TestCase):
         self.assertEqual((path / ".git/config").read_bytes(), before)
         self.assertFalse((path / ".git/FETCH_HEAD").exists())
 
+    def test_serena_language_selection_and_repeat_sync(self):
+        self.api.repositories = [dict(repository(i, name), language=language)
+                                 for i, (name, language) in enumerate(
+                                     [("one", "Go"), ("two", "Rust"), ("three", "Java"),
+                                      ("four", None), ("five", "Python")], start=1)]
+        self.assertEqual(len(self.sync()["cloned"]), 5)
+        for name, language in [("one", "go"), ("two", "rust"), ("three", "java")]:
+            path = self.projects / name
+            self.assertEqual((path / ".serena/project.yml").read_text(),
+                             f'project_name: "{name}"\nlanguage_servers: [{language}]\n')
+            self.assertEqual(self.git.run("-C", path, "status", "--porcelain"), "")
+        for name in ("four", "five"):
+            self.assertFalse((self.projects / name / ".serena").exists())
+        config = self.projects / "one/.serena/project.yml"
+        config.write_text("language_servers: [go, rust]\n")
+        self.api.repositories[0]["language"] = "Java"
+        self.assertFalse(self.sync()["changed"])
+        self.assertEqual(config.read_text(), "language_servers: [go, rust]\n")
+
+    def test_clone_preserves_tracked_serena_config(self):
+        directory = self.upstream / ".serena"
+        directory.mkdir()
+        (directory / "project.yml").write_text("language_servers: [java, kotlin]\n")
+        self.git.run("-C", self.upstream, "add", ".serena")
+        self.commit(self.upstream, "Project owns its language list")
+        self.api.repositories[0]["language"] = "Java"
+        self.sync()
+        self.assertEqual((self.projects / "one/.serena/project.yml").read_text(), "language_servers: [java, kotlin]\n")
+
+    def test_clone_never_writes_through_serena_symlinks(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        (self.upstream / ".serena").symlink_to(outside)
+        self.git.run("-C", self.upstream, "add", ".serena")
+        self.commit(self.upstream, "Linked settings")
+        self.api.repositories[0]["language"] = "Go"
+        self.assertEqual(self.sync()["cloned"], ["fixture/one"])
+        self.assertFalse((outside / "project.yml").exists())
+
     def test_topic_removal_and_readdition_preserve_checkout_in_place(self):
         topic = "server-projects"
         self.api.repositories[0]["topics"] = [topic]
