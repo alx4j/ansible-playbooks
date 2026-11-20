@@ -31,6 +31,7 @@
       ansible.builtin.command:
         argv: "{{ [dev_host_home ~ '/.local/bin/codex', 'mcp', 'add', 'serena', '--', dev_host_serena_command] + dev_host_serena_args }}"
       when: >-
+        not dev_host_serena_server.get('enabled', false) or
         dev_host_serena_server.get('transport', {}).get('command') != dev_host_serena_command or
         dev_host_serena_server.get('transport', {}).get('args') != dev_host_serena_args
       changed_when: true
