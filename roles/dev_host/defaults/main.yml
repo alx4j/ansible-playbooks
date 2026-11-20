@@ -28,6 +28,8 @@ dev_host_base_packages:
   - tmux
   - git
   - build-essential
+  - python3-venv
+  - python3-packaging
 
 dev_host_automatic_reboot: false
 dev_host_java_version: "25.0.5.0+8-zulu"
@@ -36,6 +38,7 @@ dev_host_jenv_java_alias: zulu-25
 # jenv 0.6.0, pinned to its release commit.
 dev_host_jenv_revision: a3db63d1e2f138acd3882858cd34fa9b0b88cd2c
 dev_host_gradle_version: "9.8.2"
+dev_host_gopls_version: "v0.24.0"
 dev_host_go_version: "1.27.4"
 dev_host_go_architectures:
   x86_64: amd64
@@ -53,6 +56,7 @@ dev_host_rustup_architectures:
 dev_host_rustup_checksums:
   x86_64: sha256:b1c8cb14e30889e7e2999e6b69e62d9e9b9ffc0f4df8180564d306d9680e6c55
   aarch64: sha256:9f608c142e0e38a78957d0661ba1dfaf0b6fb37184cfaa4b9a0aa57af6184282
+dev_host_serena_version: "2.1.0"
 dev_host_codex_version: "0.169.0"
 dev_host_herdr_version: "0.9.5"
 # SHA-256 values from https://herdr.dev/latest.json for this release.

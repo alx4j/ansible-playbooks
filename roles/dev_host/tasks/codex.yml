@@ -19,7 +19,7 @@
   block:
     - name: Download the reviewed Codex installer
       ansible.builtin.get_url:
-        url: https://chatgpt.com/codex/install.sh
+        url: "https://github.com/openai/codex/releases/download/rust-v{{ dev_host_codex_version }}/install.sh"
         dest: "{{ dev_host_home }}/.cache/ansible-installers/codex.sh"
         checksum: "{{ dev_host_codex_installer_checksum }}"
         mode: "0600"

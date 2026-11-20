@@ -1,0 +1,42 @@
+---
+- name: Read the installed Go language server version
+  ansible.builtin.command:
+    argv: ["{{ dev_host_home }}/.local/bin/gopls", version]
+  register: dev_host_gopls_current
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install the pinned Go language server
+  when: dev_host_gopls_current.stdout != 'golang.org/x/tools/gopls ' ~ dev_host_gopls_version
+  ansible.builtin.command:
+    argv:
+      - "{{ dev_host_home }}/.local/share/go/current/bin/go"
+      - install
+      - "golang.org/x/tools/gopls@{{ dev_host_gopls_version }}"
+  environment:
+    GOBIN: "{{ dev_host_home }}/.local/bin"
+    GOTOOLCHAIN: local
+  changed_when: true
+
+- name: Inspect the selected Rust toolchain components
+  ansible.builtin.command:
+    argv: ["{{ dev_host_home }}/.cargo/bin/rustup", component, list, --installed, --toolchain, "{{ dev_host_rust_version }}"]
+  register: dev_host_rust_components
+  changed_when: false
+  check_mode: false
+
+- name: Install Rust navigation and standard library sources
+  ansible.builtin.command:
+    argv: ["{{ dev_host_home }}/.cargo/bin/rustup", component, add, "{{ item }}", --toolchain, "{{ dev_host_rust_version }}"]
+  loop: [rust-analyzer, rust-src]
+  when: not (dev_host_rust_components.stdout_lines | select('match', '^' ~ item ~ '(-|$)') | list)
+  changed_when: true
+
+- name: Register the managed JDK and Gradle wrapper with Serena
+  ansible.builtin.script:
+    cmd: "serena_java.py {{ dev_host_java_home | quote }} {{ dev_host_java_version.split('.')[0] | quote }}"
+    executable: "{{ dev_host_home }}/.local/share/serena-venv/bin/python"
+  register: dev_host_serena_java
+  changed_when: dev_host_serena_java.stdout | trim == 'updated'
+  no_log: true
