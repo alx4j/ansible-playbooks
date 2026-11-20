@@ -22,23 +22,33 @@ FIXTURES = {
         "src/value.rs": "pub fn answer() -> i32 { 73 }\n",
     },
     "java": {
-        "pom.xml": '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>'
-                   '<groupId>example</groupId><artifactId>navigation</artifactId><version>1</version>'
-                   '<properties><maven.compiler.release>25</maven.compiler.release></properties></project>\n',
+        # A native Eclipse project exercises JDT LS and Java 25 without downloading Maven plugins.
+        ".project": """<projectDescription>
+  <name>navigation</name>
+  <buildSpec><buildCommand><name>org.eclipse.jdt.core.javabuilder</name></buildCommand></buildSpec>
+  <natures><nature>org.eclipse.jdt.core.javanature</nature></natures>
+</projectDescription>
+""",
+        ".classpath": """<classpath>
+  <classpathentry kind="src" path="src/main/java"/>
+  <classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-25"/>
+  <classpathentry kind="output" path="bin"/>
+</classpath>
+""",
         "src/main/java/example/Caller.java": "package example;\nclass Caller { int result() { return Value.answer(); } }\n",
         "src/main/java/example/Value.java": "package example;\nclass Value { static int answer() { return 73; } }\n",
     },
 }
 
 
-async def check(language, files):
-    manifest, caller, declaration = files
+async def check(language, caller, declaration):
+    files = FIXTURES[language]
     with TemporaryDirectory(prefix=f"serena-{language}-", dir=Path.home()) as directory:
         root = Path(directory)
-        for name in (manifest, caller, declaration):
+        for name, content in files.items():
             path = root / name
             path.parent.mkdir(exist_ok=True, parents=True)
-            path.write_text(files[name])
+            path.write_text(content)
         (root / ".serena").mkdir()
         (root / ".serena/project.yml").write_text(f"project_name: {root.name}\nlanguage_servers: [{language}]\n")
         server = StdioServerParameters(
@@ -59,8 +69,9 @@ async def check(language, files):
 
 
 async def main():
-    for language, files in FIXTURES.items():
-        await check(language, files)
+    await check("go", "caller.go", "answer.go")
+    await check("rust", "src/lib.rs", "src/value.rs")
+    await check("java", "src/main/java/example/Caller.java", "src/main/java/example/Value.java")
 
 
 if __name__ == "__main__":
