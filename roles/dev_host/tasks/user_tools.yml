@@ -37,6 +37,9 @@
 - name: Install Codex
   ansible.builtin.import_tasks: codex.yml
 
+- name: Install Serena and register it with Codex
+  ansible.builtin.import_tasks: serena.yml
+
 - name: Install Herdr
   ansible.builtin.import_tasks: herdr.yml
 
