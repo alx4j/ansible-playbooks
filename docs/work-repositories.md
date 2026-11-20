@@ -39,6 +39,8 @@ New clones use SSH and a pinned GitHub host key. Each clone's `core.sshCommand` 
 | Repository no longer matches `PROJECTS_TOPIC` | Leaves the checkout and existing workspace in place. |
 | Project archived by an older version is selected again | Moves it back if it is inactive and the destination is free. |
 
+On a fresh clone, sync uses GitHub’s primary language to create a local `.serena/project.yml` for Java, Go, or Rust. It preserves a configuration shipped by the repository, including mixed-language settings. Other languages and missing language data leave the clone usable without generating a configuration. Generated settings are excluded locally from Git status. Later syncs preserve the checkout and any edits to these settings.
+
 ## Project workspaces
 
 Sync starts the configured Herdr session in the background when there are projects to open. Each new workspace starts a shell in the checkout and uses its directory name as the initial label. It preserves existing labels, layouts, running shells, and focus. A workspace uses the existing clone and branch. If workspace setup fails after cloning, rerun once Herdr works. The successful clone is still there.
